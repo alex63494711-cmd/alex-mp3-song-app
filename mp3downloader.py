@@ -39,7 +39,7 @@ class App(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title(f"{APP_NAME}  v{VERSION}")
-        self.geometry("640x720")
+        self.geometry("640x780")
         self.resizable(False, False)
         self.configure(bg=BG)
         self.output_dir  = tk.StringVar(value=os.path.join(os.path.expanduser("~"), "Music"))
