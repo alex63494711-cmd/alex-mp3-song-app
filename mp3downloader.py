@@ -8,7 +8,7 @@ import urllib.request
 import zipfile
 import shutil
 
-VERSION    = "1.3"
+VERSION    = "1.4"
 APP_NAME   = "Alex MP3 Song App"
 GITHUB_RAW = "https://raw.githubusercontent.com/alex63494711-cmd/alex-mp3-song-app/refs/heads/main/mp3downloader.py"
 
@@ -16,6 +16,8 @@ BASE_DIR    = os.path.dirname(os.path.abspath(sys.executable if getattr(sys, 'fr
 TOOLS_DIR   = os.path.join(BASE_DIR, "tools")
 YTDLP_PATH  = os.path.join(TOOLS_DIR, "yt-dlp.exe")
 FFMPEG_PATH = os.path.join(TOOLS_DIR, "ffmpeg.exe")
+BUILD_BAT   = os.path.join(BASE_DIR, "build_exe.bat")
+EXE_PATH    = os.path.join(BASE_DIR, "dist", "YT-MP3-Downloader.exe")
 
 YTDLP_URL  = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe"
 FFMPEG_URL = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip"
@@ -31,6 +33,8 @@ BTN_SEC     = "#1e1e2a"
 SUCCESS     = "#22c55e"
 SUCCESS_DIM = "#14532d"
 
+CREATE_NO_WINDOW = 0x08000000
+
 class App(tk.Tk):
     def __init__(self):
         super().__init__()
@@ -38,18 +42,17 @@ class App(tk.Tk):
         self.geometry("640x720")
         self.resizable(False, False)
         self.configure(bg=BG)
-        self.output_dir   = tk.StringVar(value=os.path.join(os.path.expanduser("~"), "Music"))
-        self.quality_var  = tk.StringVar(value="0")
-        self.url_var      = tk.StringVar()
-        self.open_folder  = tk.BooleanVar(value=True)   # Dateimanager ein/aus
-        self.last_file    = None
+        self.output_dir  = tk.StringVar(value=os.path.join(os.path.expanduser("~"), "Music"))
+        self.quality_var = tk.StringVar(value="0")
+        self.url_var     = tk.StringVar()
+        self.open_folder = tk.BooleanVar(value=True)
+        self.last_file   = None
         self._build_ui()
         self.after(300, self._check_tools)
         self.bind("<Control-v>", self._on_ctrl_v)
         self.bind("<Control-V>", self._on_ctrl_v)
         self.focus_force()
 
-    # ── Strg+V ───────────────────────────────────────────────────────────────
     def _on_ctrl_v(self, event=None):
         try:
             clip = self.clipboard_get().strip()
@@ -62,9 +65,7 @@ class App(tk.Tk):
         except:
             pass
 
-    # ── UI ───────────────────────────────────────────────────────────────────
     def _build_ui(self):
-        # Header
         hdr = tk.Frame(self, bg=BG)
         hdr.pack(fill="x", padx=28, pady=(24, 0))
         left = tk.Frame(hdr, bg=BG)
@@ -89,7 +90,6 @@ class App(tk.Tk):
         self._card_quality()
         self._card_settings()
 
-        # Download Button
         self.dl_btn = tk.Button(self, text="⬇   MP3 herunterladen",
                                 font=("Segoe UI", 13, "bold"),
                                 bg=ACCENT, fg="white",
@@ -98,27 +98,22 @@ class App(tk.Tk):
                                 command=self._start_download)
         self.dl_btn.pack(fill="x", padx=28, pady=(8, 10))
 
-        # Progressbar
         style = ttk.Style()
         style.theme_use("default")
         style.configure("TProgressbar", troughcolor=CARD, background=ACCENT, thickness=4)
         self.prog = ttk.Progressbar(self, style="TProgressbar", mode="indeterminate")
         self.prog.pack(fill="x", padx=28)
 
-        # Erfolgs-Banner
         self.success_frame = tk.Frame(self, bg=SUCCESS_DIM,
                                       highlightthickness=1, highlightbackground=SUCCESS)
-        self.success_label = tk.Label(self.success_frame,
-                                      text="✅  Download fertig!",
-                                      font=("Segoe UI Black", 16, "bold"),
-                                      bg=SUCCESS_DIM, fg=SUCCESS)
-        self.success_label.pack(pady=(14, 4))
+        tk.Label(self.success_frame, text="✅  Download fertig!",
+                 font=("Segoe UI Black", 16, "bold"),
+                 bg=SUCCESS_DIM, fg=SUCCESS).pack(pady=(14, 4))
         self.success_path = tk.Label(self.success_frame, text="",
                                      font=("Segoe UI", 9),
                                      bg=SUCCESS_DIM, fg=SUCCESS)
         self.success_path.pack(pady=(0, 14))
 
-        # Log
         lf = tk.Frame(self, bg=CARD, highlightthickness=1, highlightbackground=BORDER)
         lf.pack(fill="both", expand=True, padx=28, pady=(12, 24))
         tk.Label(lf, text="LOG", font=("Segoe UI", 8, "bold"),
@@ -172,17 +167,13 @@ class App(tk.Tk):
         f = self._card("Einstellungen")
         inner = tk.Frame(f, bg=CARD)
         inner.pack(fill="x", padx=14, pady=(0, 12))
-
-        # Dateimanager Toggle
-        self.folder_chk = tk.Checkbutton(
-            inner,
-            text="📂  Dateimanager öffnen nach Download (Datei markiert)",
-            variable=self.open_folder,
-            bg=CARD, fg=TEXT, selectcolor=BG,
-            activebackground=CARD, activeforeground=ACCENT,
-            font=("Segoe UI", 10), cursor="hand2"
-        )
-        self.folder_chk.pack(anchor="w")
+        tk.Checkbutton(inner,
+                       text="📂  Dateimanager öffnen nach Download (Datei markiert)",
+                       variable=self.open_folder,
+                       bg=CARD, fg=TEXT, selectcolor=BG,
+                       activebackground=CARD, activeforeground=ACCENT,
+                       font=("Segoe UI", 10), cursor="hand2"
+                       ).pack(anchor="w")
 
     def _card(self, title):
         f = tk.Frame(self, bg=CARD, highlightthickness=1, highlightbackground=BORDER)
@@ -191,7 +182,6 @@ class App(tk.Tk):
                  bg=CARD, fg=SUBTEXT).pack(anchor="w", padx=14, pady=(10, 4))
         return f
 
-    # ── Helpers ──────────────────────────────────────────────────────────────
     def _paste(self):
         try: self.url_var.set(self.clipboard_get())
         except: pass
@@ -226,11 +216,11 @@ class App(tk.Tk):
             self.prog.stop()
 
     def _open_in_explorer(self, filepath):
-        """Öffnet den Explorer mit der Datei markiert (Windows)."""
         if self.open_folder.get() and filepath and os.path.exists(filepath):
-            subprocess.Popen(["explorer", "/select,", os.path.normpath(filepath)])
+            subprocess.Popen(["explorer", "/select,", os.path.normpath(filepath)],
+                             creationflags=CREATE_NO_WINDOW)
 
-    # ── Tools installieren ───────────────────────────────────────────────────
+    # ── Tools ────────────────────────────────────────────────────────────────
     def _check_tools(self):
         missing = []
         if not os.path.exists(YTDLP_PATH):  missing.append("yt-dlp")
@@ -279,28 +269,59 @@ class App(tk.Tk):
     def _do_update(self):
         self._set_busy(True)
         try:
+            # 1. Neue Version herunterladen
             tmp = os.path.join(BASE_DIR, "mp3downloader_new.py")
             urllib.request.urlretrieve(GITHUB_RAW, tmp)
+
+            # 2. Versionsnummer prüfen
             new_ver = VERSION
             with open(tmp, "r", encoding="utf-8") as f:
                 for line in f:
                     if line.startswith("VERSION"):
                         new_ver = line.split('"')[1]
                         break
+
             if new_ver == VERSION:
                 os.remove(tmp)
                 self._log(f"✅ Bereits aktuell (v{VERSION}).", "green")
+                self._set_busy(False)
+                return
+
+            # 3. Datei ersetzen
+            py_target = os.path.join(BASE_DIR, "mp3downloader.py")
+            shutil.move(tmp, py_target)
+            self._log(f"✅ v{new_ver} heruntergeladen!", "green")
+
+            # 4. build_exe.bat prüfen
+            if not os.path.exists(BUILD_BAT):
+                self._log("❌ build_exe.bat nicht gefunden!", "red")
+                self._log(f"   Bitte build_exe.bat in diesen Ordner legen:\n   {BASE_DIR}", "red")
+                self._set_busy(False)
+                return
+
+            # 5. EXE automatisch neu bauen
+            self._log("🔨 Baue neue EXE – bitte warten (ca. 1 Minute)...")
+            proc = subprocess.Popen(
+                ["cmd", "/c", BUILD_BAT],
+                cwd=BASE_DIR,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True, encoding="utf-8", errors="replace",
+                creationflags=CREATE_NO_WINDOW
+            )
+            for line in proc.stdout:
+                line = line.rstrip()
+                if line: self._log(line)
+            proc.wait()
+
+            if proc.returncode == 0 and os.path.exists(EXE_PATH):
+                self._log(f"✅ Neue EXE fertig! Starte v{new_ver}...", "green")
+                # 6. Neue EXE starten und diese App schließen
+                subprocess.Popen([EXE_PATH], creationflags=CREATE_NO_WINDOW)
+                self.after(1500, self.destroy)
             else:
-                current = os.path.abspath(__file__) if not getattr(sys, 'frozen', False) else None
-                if current:
-                    shutil.move(tmp, current)
-                    self._log(f"✅ Update auf v{new_ver} erfolgreich!", "green")
-                    self._log("   build_exe.bat ausführen für neue EXE.")
-                    messagebox.showinfo("Update", f"v{new_ver} heruntergeladen!\nJetzt build_exe.bat ausführen.")
-                else:
-                    os.remove(tmp)
-                    self._log(f"ℹ  v{new_ver} verfügbar – mp3downloader.py von GitHub laden + EXE neu bauen.")
-                    messagebox.showinfo("Update verfügbar", f"Version v{new_ver} ist da!\nmp3downloader.py von GitHub laden\nund build_exe.bat ausführen.")
+                self._log("❌ Build fehlgeschlagen. Prüfe ob Python installiert ist.", "red")
+
         except Exception as e:
             self._log(f"❌ Update-Fehler: {e}", "red")
         finally:
@@ -330,12 +351,10 @@ class App(tk.Tk):
             "--ffmpeg-location", TOOLS_DIR,
             "-o", out,
             "--no-playlist",
-            "--print", "after_move:filepath",   # gibt fertigen Dateipfad aus
+            "--print", "after_move:filepath",
             url
         ]
         try:
-            # CREATE_NO_WINDOW = kein schwarzes Terminal-Fenster
-            CREATE_NO_WINDOW = 0x08000000
             proc = subprocess.Popen(
                 cmd,
                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
@@ -344,9 +363,7 @@ class App(tk.Tk):
             )
             for line in proc.stdout:
                 line = line.rstrip()
-                if not line:
-                    continue
-                # Fertiger Dateipfad wird von --print ausgegeben
+                if not line: continue
                 if os.path.sep in line and line.endswith(".mp3"):
                     self.last_file = line.strip()
                 else:
