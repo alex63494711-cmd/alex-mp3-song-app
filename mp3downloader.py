@@ -100,8 +100,8 @@ class App(tk.Tk):
         # Progressbar
         style = ttk.Style()
         style.theme_use("default")
-        style.configure("A.TProgressbar", troughcolor=CARD, background=ACCENT, thickness=4)
-        self.prog = ttk.Progressbar(self, style="A.TProgressbar", mode="indeterminate")
+        style.configure("TProgressbar", troughcolor=CARD, background=ACCENT, thickness=4)
+        self.prog = ttk.Progressbar(self, style="TProgressbar", mode="indeterminate")
         self.prog.pack(fill="x", padx=28)
 
         # Erfolgs-Banner (anfangs versteckt)
