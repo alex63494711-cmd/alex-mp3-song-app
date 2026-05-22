@@ -6,10 +6,9 @@ import os
 import sys
 import urllib.request
 import zipfile
-import webbrowser
 import shutil
 
-VERSION    = "1.2"
+VERSION    = "1.3"
 APP_NAME   = "Alex MP3 Song App"
 GITHUB_RAW = "https://raw.githubusercontent.com/alex63494711-cmd/alex-mp3-song-app/refs/heads/main/mp3downloader.py"
 
@@ -21,35 +20,36 @@ FFMPEG_PATH = os.path.join(TOOLS_DIR, "ffmpeg.exe")
 YTDLP_URL  = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe"
 FFMPEG_URL = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip"
 
-BG      = "#0d0d12"
-CARD    = "#16161f"
-ACCENT  = "#7c3aed"
-ACCENT2 = "#9d5ff5"
-TEXT    = "#f0f0f5"
-SUBTEXT = "#66667a"
-BORDER  = "#222230"
-BTN_SEC = "#1e1e2a"
-SUCCESS = "#22c55e"
+BG          = "#0d0d12"
+CARD        = "#16161f"
+ACCENT      = "#7c3aed"
+ACCENT2     = "#9d5ff5"
+TEXT        = "#f0f0f5"
+SUBTEXT     = "#66667a"
+BORDER      = "#222230"
+BTN_SEC     = "#1e1e2a"
+SUCCESS     = "#22c55e"
 SUCCESS_DIM = "#14532d"
 
 class App(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title(f"{APP_NAME}  v{VERSION}")
-        self.geometry("640x680")
+        self.geometry("640x720")
         self.resizable(False, False)
         self.configure(bg=BG)
-        self.output_dir = tk.StringVar(value=os.path.join(os.path.expanduser("~"), "Music"))
-        self.quality_var = tk.StringVar(value="0")
-        self.url_var = tk.StringVar()
+        self.output_dir   = tk.StringVar(value=os.path.join(os.path.expanduser("~"), "Music"))
+        self.quality_var  = tk.StringVar(value="0")
+        self.url_var      = tk.StringVar()
+        self.open_folder  = tk.BooleanVar(value=True)   # Dateimanager ein/aus
+        self.last_file    = None
         self._build_ui()
         self.after(300, self._check_tools)
-        # Strg+V global abfangen
         self.bind("<Control-v>", self._on_ctrl_v)
         self.bind("<Control-V>", self._on_ctrl_v)
         self.focus_force()
 
-    # ── Strg+V Handler ───────────────────────────────────────────────────────
+    # ── Strg+V ───────────────────────────────────────────────────────────────
     def _on_ctrl_v(self, event=None):
         try:
             clip = self.clipboard_get().strip()
@@ -82,11 +82,12 @@ class App(tk.Tk):
         self.upd_btn.pack(side="right", ipadx=12, ipady=6)
 
         tk.Label(self, text=f"v{VERSION}  –  Strg+V drücken = sofort herunterladen!",
-                 font=("Segoe UI", 9), bg=BG, fg=SUBTEXT).pack(anchor="w", padx=28, pady=(3, 16))
+                 font=("Segoe UI", 9), bg=BG, fg=SUBTEXT).pack(anchor="w", padx=28, pady=(3, 14))
 
         self._card_url()
         self._card_folder()
         self._card_quality()
+        self._card_settings()
 
         # Download Button
         self.dl_btn = tk.Button(self, text="⬇   MP3 herunterladen",
@@ -104,19 +105,18 @@ class App(tk.Tk):
         self.prog = ttk.Progressbar(self, style="TProgressbar", mode="indeterminate")
         self.prog.pack(fill="x", padx=28)
 
-        # Erfolgs-Banner (anfangs versteckt)
+        # Erfolgs-Banner
         self.success_frame = tk.Frame(self, bg=SUCCESS_DIM,
                                       highlightthickness=1, highlightbackground=SUCCESS)
         self.success_label = tk.Label(self.success_frame,
                                       text="✅  Download fertig!",
                                       font=("Segoe UI Black", 16, "bold"),
                                       bg=SUCCESS_DIM, fg=SUCCESS)
-        self.success_label.pack(pady=14)
+        self.success_label.pack(pady=(14, 4))
         self.success_path = tk.Label(self.success_frame, text="",
                                      font=("Segoe UI", 9),
                                      bg=SUCCESS_DIM, fg=SUCCESS)
         self.success_path.pack(pady=(0, 14))
-        # Banner erstmal nicht anzeigen
 
         # Log
         lf = tk.Frame(self, bg=CARD, highlightthickness=1, highlightbackground=BORDER)
@@ -127,12 +127,12 @@ class App(tk.Tk):
                            relief="flat", bd=0, height=7,
                            insertbackground=ACCENT, wrap="word", state="disabled")
         self.log.pack(fill="both", expand=True, padx=12, pady=(2, 10))
-        self.log.tag_configure("green", foreground=SUCCESS)
-        self.log.tag_configure("red",   foreground="#f87171")
+        self.log.tag_configure("green",  foreground=SUCCESS)
+        self.log.tag_configure("red",    foreground="#f87171")
         self.log.tag_configure("normal", foreground=TEXT)
 
     def _card_url(self):
-        f = self._card("YouTube / SoundCloud URL  (oder einfach Strg+V drücken)")
+        f = self._card("YouTube / SoundCloud URL  (oder Strg+V drücken)")
         inner = tk.Frame(f, bg=CARD)
         inner.pack(fill="x", padx=14, pady=(0, 12))
         tk.Entry(inner, textvariable=self.url_var, font=("Segoe UI", 11),
@@ -168,6 +168,22 @@ class App(tk.Tk):
                            activeforeground=ACCENT, font=("Segoe UI", 10),
                            cursor="hand2").pack(side="left", padx=(0, 18))
 
+    def _card_settings(self):
+        f = self._card("Einstellungen")
+        inner = tk.Frame(f, bg=CARD)
+        inner.pack(fill="x", padx=14, pady=(0, 12))
+
+        # Dateimanager Toggle
+        self.folder_chk = tk.Checkbutton(
+            inner,
+            text="📂  Dateimanager öffnen nach Download (Datei markiert)",
+            variable=self.open_folder,
+            bg=CARD, fg=TEXT, selectcolor=BG,
+            activebackground=CARD, activeforeground=ACCENT,
+            font=("Segoe UI", 10), cursor="hand2"
+        )
+        self.folder_chk.pack(anchor="w")
+
     def _card(self, title):
         f = tk.Frame(self, bg=CARD, highlightthickness=1, highlightbackground=BORDER)
         f.pack(fill="x", padx=28, pady=(0, 10))
@@ -193,7 +209,6 @@ class App(tk.Tk):
     def _show_success(self, folder):
         self.success_path.configure(text=f"📁  {folder}")
         self.success_frame.pack(fill="x", padx=28, pady=(10, 0), before=self.prog)
-        # Nach 6 Sekunden wieder ausblenden
         self.after(6000, self._hide_success)
 
     def _hide_success(self):
@@ -209,6 +224,11 @@ class App(tk.Tk):
             self.prog.start(12)
         else:
             self.prog.stop()
+
+    def _open_in_explorer(self, filepath):
+        """Öffnet den Explorer mit der Datei markiert (Windows)."""
+        if self.open_folder.get() and filepath and os.path.exists(filepath):
+            subprocess.Popen(["explorer", "/select,", os.path.normpath(filepath)])
 
     # ── Tools installieren ───────────────────────────────────────────────────
     def _check_tools(self):
@@ -300,6 +320,7 @@ class App(tk.Tk):
     def _download(self, url):
         self._set_busy(True)
         self._hide_success()
+        self.last_file = None
         self._log(f"\n▶  Download startet...")
         out = os.path.join(self.output_dir.get(), "%(title)s.%(ext)s")
         cmd = [
@@ -309,18 +330,35 @@ class App(tk.Tk):
             "--ffmpeg-location", TOOLS_DIR,
             "-o", out,
             "--no-playlist",
+            "--print", "after_move:filepath",   # gibt fertigen Dateipfad aus
             url
         ]
         try:
-            proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                                    text=True, encoding="utf-8", errors="replace")
+            # CREATE_NO_WINDOW = kein schwarzes Terminal-Fenster
+            CREATE_NO_WINDOW = 0x08000000
+            proc = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                text=True, encoding="utf-8", errors="replace",
+                creationflags=CREATE_NO_WINDOW
+            )
             for line in proc.stdout:
-                if line.strip(): self._log(line.rstrip())
+                line = line.rstrip()
+                if not line:
+                    continue
+                # Fertiger Dateipfad wird von --print ausgegeben
+                if os.path.sep in line and line.endswith(".mp3"):
+                    self.last_file = line.strip()
+                else:
+                    self._log(line)
             proc.wait()
             if proc.returncode == 0:
                 self._log(f"\n✅ Fertig! Gespeichert in: {self.output_dir.get()}", "green")
                 self.url_var.set("")
-                self.after(0, lambda: self._show_success(self.output_dir.get()))
+                folder = self.output_dir.get()
+                last   = self.last_file
+                self.after(0, lambda: self._show_success(folder))
+                self.after(500, lambda: self._open_in_explorer(last))
             else:
                 self._log("❌ Fehlgeschlagen. Prüfe den Link.", "red")
         except Exception as e:
