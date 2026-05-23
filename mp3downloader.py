@@ -12,7 +12,7 @@ import re
 import base64
 import tempfile
 
-VERSION    = "1.9"
+VERSION    = "2.0"
 APP_NAME   = "MP3 Song App"
 GITHUB_RAW = "https://raw.githubusercontent.com/alex63494711-cmd/alex-mp3-song-app/refs/heads/main/mp3downloader.py"
 
@@ -167,10 +167,25 @@ class App(tk.Tk):
         self.inner.bind("<Configure>", lambda e: canvas.configure(
             scrollregion=canvas.bbox("all")))
 
-        # Mausrad scrollen
+        # Smooth scroll
+        self._scroll_target = 0.0
+        self._scroll_animating = False
+
         def _scroll(e):
-            canvas.yview_scroll(int(-1 * (e.delta / 120)), "units")
+            # Zielposition berechnen
+            curr = canvas.yview()[0]
+            total_h = self.inner.winfo_reqheight()
+            view_h  = canvas.winfo_height()
+            if total_h <= view_h:
+                return
+            step = (e.delta / 120) * 60 / total_h   # 60px pro Klick
+            self._scroll_target = max(0.0, min(1.0, self._scroll_target - step))
+            if not self._scroll_animating:
+                self._animate_scroll(canvas)
+
         canvas.bind_all("<MouseWheel>", _scroll)
+        # Startposition merken
+        self.after(200, lambda: setattr(self, '_scroll_target', canvas.yview()[0]))
 
         self._build_content(self.inner)
 
@@ -240,6 +255,18 @@ class App(tk.Tk):
         self.log.tag_configure("red",     foreground="#f87171")
         self.log.tag_configure("normal",  foreground=TEXT)
         self.log.tag_configure("spotify", foreground=SPOTIFY_CLR)
+
+    def _animate_scroll(self, canvas):
+        self._scroll_animating = True
+        curr = canvas.yview()[0]
+        diff = self._scroll_target - curr
+        if abs(diff) < 0.0005:
+            canvas.yview_moveto(self._scroll_target)
+            self._scroll_animating = False
+            return
+        # Easing: 20% der Differenz pro Frame → smooth deceleration
+        canvas.yview_moveto(curr + diff * 0.2)
+        self.after(12, lambda: self._animate_scroll(canvas))
 
     # ── Karten ───────────────────────────────────────────────────────────────
     def _card_url(self, p):
