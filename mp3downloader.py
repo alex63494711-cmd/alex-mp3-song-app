@@ -5,11 +5,13 @@ import subprocess
 import os
 import sys
 import urllib.request
+import urllib.parse
 import zipfile
 import shutil
+import re
 
-VERSION    = "1.4"
-APP_NAME   = "Alex MP3 Song App"
+VERSION    = "1.6"
+APP_NAME   = "MP3 Song App"
 GITHUB_RAW = "https://raw.githubusercontent.com/alex63494711-cmd/alex-mp3-song-app/refs/heads/main/mp3downloader.py"
 
 BASE_DIR    = os.path.dirname(os.path.abspath(sys.executable if getattr(sys, 'frozen', False) else __file__))
@@ -17,21 +19,22 @@ TOOLS_DIR   = os.path.join(BASE_DIR, "tools")
 YTDLP_PATH  = os.path.join(TOOLS_DIR, "yt-dlp.exe")
 FFMPEG_PATH = os.path.join(TOOLS_DIR, "ffmpeg.exe")
 BUILD_BAT   = os.path.join(BASE_DIR, "build_exe.bat")
-EXE_PATH    = os.path.join(BASE_DIR, "dist", "YT-MP3-Downloader.exe")
+EXE_PATH    = os.path.join(BASE_DIR, "dist", "MP3-Song-App.exe")
 
 YTDLP_URL  = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe"
 FFMPEG_URL = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip"
 
 BG          = "#0d0d12"
 CARD        = "#16161f"
-ACCENT      = "#7c3aed"
-ACCENT2     = "#9d5ff5"
+ACCENT      = "#a855f7"
+ACCENT2     = "#c084fc"
 TEXT        = "#f0f0f5"
 SUBTEXT     = "#66667a"
 BORDER      = "#222230"
 BTN_SEC     = "#1e1e2a"
 SUCCESS     = "#22c55e"
 SUCCESS_DIM = "#14532d"
+SPOTIFY_CLR = "#1db954"
 
 CREATE_NO_WINDOW = 0x08000000
 
@@ -39,7 +42,7 @@ class App(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title(f"{APP_NAME}  v{VERSION}")
-        self.geometry("640x780")
+        self.geometry("660x820")
         self.resizable(False, False)
         self.configure(bg=BG)
         self.output_dir  = tk.StringVar(value=os.path.join(os.path.expanduser("~"), "Music"))
@@ -53,27 +56,33 @@ class App(tk.Tk):
         self.bind("<Control-V>", self._on_ctrl_v)
         self.focus_force()
 
+    # ── Strg+V global ────────────────────────────────────────────────────────
     def _on_ctrl_v(self, event=None):
         try:
             clip = self.clipboard_get().strip()
-            if clip.startswith("http"):
+            if "spotify.com" in clip:
+                self.spotify_var.set(clip)
+                self._log("🎵 Spotify-Link erkannt – suche auf YouTube...")
+                self.after(300, self._spotify_to_yt)
+            elif clip.startswith("http"):
                 self.url_var.set(clip)
-                self._log("📋 Link eingefügt – starte Download...")
+                self._log("📋 YouTube/SoundCloud Link – starte Download...")
                 self.after(300, self._start_download)
             else:
-                self.url_var.set(clip)
+                # Könnte ein Songname sein
+                self.search_var.set(clip)
+                self._log(f"🔍 Songname erkannt: {clip}")
         except:
             pass
 
+    # ── UI ───────────────────────────────────────────────────────────────────
     def _build_ui(self):
+        # ── Header ──
         hdr = tk.Frame(self, bg=BG)
         hdr.pack(fill="x", padx=28, pady=(24, 0))
-        left = tk.Frame(hdr, bg=BG)
-        left.pack(side="left")
-        tk.Label(left, text="🎵 Alex", font=("Segoe UI Black", 24, "bold"),
-                 bg=BG, fg=ACCENT).pack(side="left")
-        tk.Label(left, text=" MP3 Song App", font=("Segoe UI", 16),
-                 bg=BG, fg=TEXT).pack(side="left", pady=(6, 0))
+        tk.Label(hdr, text="🎵 MP3 Song App",
+                 font=("Segoe UI Black", 22, "bold"),
+                 bg=BG, fg=TEXT).pack(side="left")
         self.upd_btn = tk.Button(hdr, text="🔄 Update",
                                  font=("Segoe UI", 9, "bold"),
                                  bg=BTN_SEC, fg=SUBTEXT,
@@ -81,15 +90,18 @@ class App(tk.Tk):
                                  relief="flat", cursor="hand2", bd=0,
                                  command=self._check_update)
         self.upd_btn.pack(side="right", ipadx=12, ipady=6)
+        tk.Label(self, text=f"v{VERSION}  –  YouTube · SoundCloud · Spotify · Songname",
+                 font=("Segoe UI", 9), bg=BG, fg=SUBTEXT).pack(anchor="w", padx=28, pady=(3, 16))
 
-        tk.Label(self, text=f"v{VERSION}  –  Strg+V drücken = sofort herunterladen!",
-                 font=("Segoe UI", 9), bg=BG, fg=SUBTEXT).pack(anchor="w", padx=28, pady=(3, 14))
-
+        # ── Karten ──
         self._card_url()
+        self._card_search()
+        self._card_spotify()
         self._card_folder()
         self._card_quality()
         self._card_settings()
 
+        # ── Download Button ──
         self.dl_btn = tk.Button(self, text="⬇   MP3 herunterladen",
                                 font=("Segoe UI", 13, "bold"),
                                 bg=ACCENT, fg="white",
@@ -98,77 +110,126 @@ class App(tk.Tk):
                                 command=self._start_download)
         self.dl_btn.pack(fill="x", padx=28, pady=(8, 10))
 
+        # ── Progressbar ──
         style = ttk.Style()
         style.theme_use("default")
         style.configure("TProgressbar", troughcolor=CARD, background=ACCENT, thickness=4)
         self.prog = ttk.Progressbar(self, style="TProgressbar", mode="indeterminate")
         self.prog.pack(fill="x", padx=28)
 
+        # ── Erfolgs-Banner ──
         self.success_frame = tk.Frame(self, bg=SUCCESS_DIM,
                                       highlightthickness=1, highlightbackground=SUCCESS)
         tk.Label(self.success_frame, text="✅  Download fertig!",
-                 font=("Segoe UI Black", 16, "bold"),
-                 bg=SUCCESS_DIM, fg=SUCCESS).pack(pady=(14, 4))
+                 font=("Segoe UI Black", 15, "bold"),
+                 bg=SUCCESS_DIM, fg=SUCCESS).pack(pady=(12, 2))
         self.success_path = tk.Label(self.success_frame, text="",
                                      font=("Segoe UI", 9),
                                      bg=SUCCESS_DIM, fg=SUCCESS)
-        self.success_path.pack(pady=(0, 14))
+        self.success_path.pack(pady=(0, 12))
 
+        # ── Log ──
         lf = tk.Frame(self, bg=CARD, highlightthickness=1, highlightbackground=BORDER)
-        lf.pack(fill="both", expand=True, padx=28, pady=(12, 24))
+        lf.pack(fill="both", expand=True, padx=28, pady=(12, 20))
         tk.Label(lf, text="LOG", font=("Segoe UI", 8, "bold"),
                  bg=CARD, fg=SUBTEXT).pack(anchor="w", padx=12, pady=(8, 0))
         self.log = tk.Text(lf, bg=CARD, fg=TEXT, font=("Consolas", 9),
-                           relief="flat", bd=0, height=7,
+                           relief="flat", bd=0, height=5,
                            insertbackground=ACCENT, wrap="word", state="disabled")
         self.log.pack(fill="both", expand=True, padx=12, pady=(2, 10))
-        self.log.tag_configure("green",  foreground=SUCCESS)
-        self.log.tag_configure("red",    foreground="#f87171")
-        self.log.tag_configure("normal", foreground=TEXT)
+        self.log.tag_configure("green",   foreground=SUCCESS)
+        self.log.tag_configure("red",     foreground="#f87171")
+        self.log.tag_configure("normal",  foreground=TEXT)
+        self.log.tag_configure("spotify", foreground=SPOTIFY_CLR)
 
+    # ── Karten ───────────────────────────────────────────────────────────────
     def _card_url(self):
-        f = self._card("YouTube / SoundCloud URL  (oder Strg+V drücken)")
-        inner = tk.Frame(f, bg=CARD)
-        inner.pack(fill="x", padx=14, pady=(0, 12))
-        tk.Entry(inner, textvariable=self.url_var, font=("Segoe UI", 11),
+        f = self._card("🔗  YouTube / SoundCloud Link  (oder Strg+V)")
+        row = tk.Frame(f, bg=CARD)
+        row.pack(fill="x", padx=14, pady=(0, 12))
+        tk.Entry(row, textvariable=self.url_var, font=("Segoe UI", 11),
                  bg="#0f0f18", fg=TEXT, insertbackground=TEXT,
                  relief="flat", highlightthickness=1,
                  highlightbackground=BORDER, highlightcolor=ACCENT
                  ).pack(side="left", fill="x", expand=True, ipady=8, ipadx=10)
-        tk.Button(inner, text="📋 Einfügen", font=("Segoe UI", 9),
+        tk.Button(row, text="📋", font=("Segoe UI", 11),
                   bg=BTN_SEC, fg=TEXT, activebackground=ACCENT,
                   activeforeground="white", relief="flat", cursor="hand2",
-                  command=self._paste).pack(side="left", padx=(8, 0), ipady=6, ipadx=10)
+                  command=lambda: self._paste_to(self.url_var)
+                  ).pack(side="left", padx=(6, 0), ipady=6, ipadx=10)
+
+    def _card_search(self):
+        f = self._card("🔍  Songname eingeben → automatisch suchen & laden")
+        row = tk.Frame(f, bg=CARD)
+        row.pack(fill="x", padx=14, pady=(0, 12))
+        self.search_var = tk.StringVar()
+        tk.Entry(row, textvariable=self.search_var, font=("Segoe UI", 11),
+                 bg="#0f0f18", fg=TEXT, insertbackground=TEXT,
+                 relief="flat", highlightthickness=1,
+                 highlightbackground=BORDER, highlightcolor=ACCENT
+                 ).pack(side="left", fill="x", expand=True, ipady=8, ipadx=10)
+        tk.Button(row, text="🔍 Suchen & laden",
+                  font=("Segoe UI", 10, "bold"),
+                  bg=ACCENT, fg="white",
+                  activebackground=ACCENT2, activeforeground="white",
+                  relief="flat", cursor="hand2",
+                  command=self._search_by_name
+                  ).pack(side="left", padx=(8, 0), ipady=6, ipadx=14)
+
+    def _card_spotify(self):
+        f = self._card("🟢  Spotify-Link → findet Song auf YouTube & lädt ihn")
+        row = tk.Frame(f, bg=CARD)
+        row.pack(fill="x", padx=14, pady=(0, 12))
+        self.spotify_var = tk.StringVar()
+        tk.Entry(row, textvariable=self.spotify_var, font=("Segoe UI", 11),
+                 bg="#0f0f18", fg=TEXT, insertbackground=TEXT,
+                 relief="flat", highlightthickness=1,
+                 highlightbackground=BORDER, highlightcolor=SPOTIFY_CLR
+                 ).pack(side="left", fill="x", expand=True, ipady=8, ipadx=10)
+        tk.Button(row, text="📋", font=("Segoe UI", 11),
+                  bg=BTN_SEC, fg=TEXT, activebackground=SPOTIFY_CLR,
+                  activeforeground="white", relief="flat", cursor="hand2",
+                  command=lambda: self._paste_to(self.spotify_var)
+                  ).pack(side="left", padx=(6, 0), ipady=6, ipadx=10)
+        tk.Button(row, text="🎵 Laden",
+                  font=("Segoe UI", 10, "bold"),
+                  bg=SPOTIFY_CLR, fg="white",
+                  activebackground="#17a349", activeforeground="white",
+                  relief="flat", cursor="hand2",
+                  command=self._spotify_to_yt
+                  ).pack(side="left", padx=(6, 0), ipady=6, ipadx=14)
 
     def _card_folder(self):
-        f = self._card("Speicherordner")
-        inner = tk.Frame(f, bg=CARD)
-        inner.pack(fill="x", padx=14, pady=(0, 12))
-        tk.Label(inner, textvariable=self.output_dir, font=("Segoe UI", 10),
+        f = self._card("📁  Speicherordner")
+        row = tk.Frame(f, bg=CARD)
+        row.pack(fill="x", padx=14, pady=(0, 12))
+        tk.Label(row, textvariable=self.output_dir, font=("Segoe UI", 10),
                  bg="#0f0f18", fg=TEXT, anchor="w",
                  highlightthickness=1, highlightbackground=BORDER
                  ).pack(side="left", fill="x", expand=True, ipady=8, ipadx=10)
-        tk.Button(inner, text="📁 Auswählen", font=("Segoe UI", 9),
+        tk.Button(row, text="Auswählen", font=("Segoe UI", 9),
                   bg=BTN_SEC, fg=TEXT, activebackground=ACCENT,
                   activeforeground="white", relief="flat", cursor="hand2",
-                  command=self._browse).pack(side="left", padx=(8, 0), ipady=6, ipadx=10)
+                  command=self._browse
+                  ).pack(side="left", padx=(8, 0), ipady=6, ipadx=12)
 
     def _card_quality(self):
-        f = self._card("Qualität")
-        inner = tk.Frame(f, bg=CARD)
-        inner.pack(fill="x", padx=14, pady=(0, 12))
+        f = self._card("🎚️  Qualität")
+        row = tk.Frame(f, bg=CARD)
+        row.pack(fill="x", padx=14, pady=(0, 12))
         for label, val in [("Beste (320kbps)", "0"), ("Gut (192kbps)", "5"), ("Normal (128kbps)", "9")]:
-            tk.Radiobutton(inner, text=label, variable=self.quality_var, value=val,
-                           bg=CARD, fg=TEXT, selectcolor=BG, activebackground=CARD,
-                           activeforeground=ACCENT, font=("Segoe UI", 10),
-                           cursor="hand2").pack(side="left", padx=(0, 18))
+            tk.Radiobutton(row, text=label, variable=self.quality_var, value=val,
+                           bg=CARD, fg=TEXT, selectcolor=BG,
+                           activebackground=CARD, activeforeground=ACCENT,
+                           font=("Segoe UI", 10), cursor="hand2"
+                           ).pack(side="left", padx=(0, 20))
 
     def _card_settings(self):
-        f = self._card("Einstellungen")
-        inner = tk.Frame(f, bg=CARD)
-        inner.pack(fill="x", padx=14, pady=(0, 12))
-        tk.Checkbutton(inner,
-                       text="📂  Dateimanager öffnen nach Download (Datei markiert)",
+        f = self._card("⚙️  Einstellungen")
+        row = tk.Frame(f, bg=CARD)
+        row.pack(fill="x", padx=14, pady=(0, 12))
+        tk.Checkbutton(row,
+                       text="📂  Dateimanager nach Download öffnen (Datei markiert)",
                        variable=self.open_folder,
                        bg=CARD, fg=TEXT, selectcolor=BG,
                        activebackground=CARD, activeforeground=ACCENT,
@@ -177,13 +238,14 @@ class App(tk.Tk):
 
     def _card(self, title):
         f = tk.Frame(self, bg=CARD, highlightthickness=1, highlightbackground=BORDER)
-        f.pack(fill="x", padx=28, pady=(0, 10))
+        f.pack(fill="x", padx=28, pady=(0, 8))
         tk.Label(f, text=title, font=("Segoe UI", 9, "bold"),
                  bg=CARD, fg=SUBTEXT).pack(anchor="w", padx=14, pady=(10, 4))
         return f
 
-    def _paste(self):
-        try: self.url_var.set(self.clipboard_get())
+    # ── Helpers ──────────────────────────────────────────────────────────────
+    def _paste_to(self, var):
+        try: var.set(self.clipboard_get().strip())
         except: pass
 
     def _browse(self):
@@ -220,7 +282,85 @@ class App(tk.Tk):
             subprocess.Popen(["explorer", "/select,", os.path.normpath(filepath)],
                              creationflags=CREATE_NO_WINDOW)
 
-    # ── Tools ────────────────────────────────────────────────────────────────
+    # ── Songname suchen ──────────────────────────────────────────────────────
+    def _search_by_name(self):
+        name = self.search_var.get().strip()
+        if not name:
+            messagebox.showwarning("Kein Name", "Bitte einen Songnamen eingeben!")
+            return
+        threading.Thread(target=self._do_name_search, args=(name,), daemon=True).start()
+
+    def _do_name_search(self, name):
+        self._set_busy(True)
+        try:
+            self._log(f"🔍 Suche: {name}")
+            yt_url = self._youtube_search(name)
+            if not yt_url:
+                self._log("❌ Kein Ergebnis gefunden.", "red")
+                return
+            self._log(f"✅ Gefunden: {yt_url}", "green")
+            self.url_var.set(yt_url)
+            self.search_var.set("")
+            self.after(0, self._start_download)
+        except Exception as e:
+            self._log(f"❌ Fehler: {e}", "red")
+        finally:
+            self._set_busy(False)
+
+    # ── Spotify → YouTube ────────────────────────────────────────────────────
+    def _spotify_to_yt(self):
+        url = self.spotify_var.get().strip()
+        if not url or "spotify.com" not in url:
+            messagebox.showwarning("Kein Spotify-Link", "Bitte einen Spotify-Link einfügen!")
+            return
+        threading.Thread(target=self._do_spotify_search, args=(url,), daemon=True).start()
+
+    def _do_spotify_search(self, spotify_url):
+        self._set_busy(True)
+        try:
+            self._log("🎵 Lese Spotify-Link...", "spotify")
+            req = urllib.request.Request(spotify_url,
+                                         headers={"User-Agent": "Mozilla/5.0"})
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                html = resp.read().decode("utf-8", errors="ignore")
+
+            title_match = re.search(r"<title>(.*?)</title>", html)
+            if not title_match:
+                self._log("❌ Konnte Songtitel nicht lesen.", "red")
+                return
+
+            raw = title_match.group(1)
+            song_name = re.sub(r"\s*[|\-–]\s*Spotify.*$", "", raw).strip()
+            self._log(f"🎵 Song: {song_name}", "spotify")
+            self._log("🔍 Suche auf YouTube...", "spotify")
+
+            yt_url = self._youtube_search(song_name + " official audio")
+            if not yt_url:
+                self._log("❌ Kein YouTube-Video gefunden.", "red")
+                return
+
+            self._log(f"✅ YouTube: {yt_url}", "green")
+            self.url_var.set(yt_url)
+            self.spotify_var.set("")
+            self.after(0, self._start_download)
+
+        except Exception as e:
+            self._log(f"❌ Fehler: {e}", "red")
+        finally:
+            self._set_busy(False)
+
+    def _youtube_search(self, query):
+        q = urllib.parse.quote(query)
+        url = f"https://www.youtube.com/results?search_query={q}"
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            html = resp.read().decode("utf-8", errors="ignore")
+        m = re.search(r'"videoId":"([a-zA-Z0-9_-]{11})"', html)
+        if m:
+            return f"https://www.youtube.com/watch?v={m.group(1)}"
+        return None
+
+    # ── Tools installieren ───────────────────────────────────────────────────
     def _check_tools(self):
         missing = []
         if not os.path.exists(YTDLP_PATH):  missing.append("yt-dlp")
@@ -229,7 +369,7 @@ class App(tk.Tk):
             self._log(f"⚙  Installiere: {', '.join(missing)}...")
             threading.Thread(target=self._install_tools, daemon=True).start()
         else:
-            self._log("✅ Bereit! Strg+V drücken um sofort loszulegen.", "green")
+            self._log("✅ Bereit! Strg+V oder Songname eingeben.", "green")
 
     def _install_tools(self):
         self._set_busy(True)
@@ -255,7 +395,7 @@ class App(tk.Tk):
                     p = os.path.join(TOOLS_DIR, d)
                     if os.path.isdir(p): shutil.rmtree(p, ignore_errors=True)
                 self._log("✅ ffmpeg installiert.", "green")
-            self._log("🎉 Alles bereit! Strg+V = sofort herunterladen.", "green")
+            self._log("🎉 Alles bereit!", "green")
         except Exception as e:
             self._log(f"❌ Fehler: {e}", "red")
         finally:
@@ -269,59 +409,41 @@ class App(tk.Tk):
     def _do_update(self):
         self._set_busy(True)
         try:
-            # 1. Neue Version herunterladen
             tmp = os.path.join(BASE_DIR, "mp3downloader_new.py")
             urllib.request.urlretrieve(GITHUB_RAW, tmp)
-
-            # 2. Versionsnummer prüfen
             new_ver = VERSION
             with open(tmp, "r", encoding="utf-8") as f:
                 for line in f:
                     if line.startswith("VERSION"):
                         new_ver = line.split('"')[1]
                         break
-
             if new_ver == VERSION:
                 os.remove(tmp)
                 self._log(f"✅ Bereits aktuell (v{VERSION}).", "green")
                 self._set_busy(False)
                 return
-
-            # 3. Datei ersetzen
             py_target = os.path.join(BASE_DIR, "mp3downloader.py")
             shutil.move(tmp, py_target)
             self._log(f"✅ v{new_ver} heruntergeladen!", "green")
-
-            # 4. build_exe.bat prüfen
             if not os.path.exists(BUILD_BAT):
                 self._log("❌ build_exe.bat nicht gefunden!", "red")
-                self._log(f"   Bitte build_exe.bat in diesen Ordner legen:\n   {BASE_DIR}", "red")
                 self._set_busy(False)
                 return
-
-            # 5. EXE automatisch neu bauen
-            self._log("🔨 Baue neue EXE – bitte warten (ca. 1 Minute)...")
+            self._log("🔨 Baue neue EXE – bitte warten...")
             proc = subprocess.Popen(
-                ["cmd", "/c", BUILD_BAT],
-                cwd=BASE_DIR,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
+                ["cmd", "/c", BUILD_BAT], cwd=BASE_DIR,
+                stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                 text=True, encoding="utf-8", errors="replace",
-                creationflags=CREATE_NO_WINDOW
-            )
+                creationflags=CREATE_NO_WINDOW)
             for line in proc.stdout:
-                line = line.rstrip()
-                if line: self._log(line)
+                if line.strip(): self._log(line.rstrip())
             proc.wait()
-
             if proc.returncode == 0 and os.path.exists(EXE_PATH):
                 self._log(f"✅ Neue EXE fertig! Starte v{new_ver}...", "green")
-                # 6. Neue EXE starten und diese App schließen
                 subprocess.Popen([EXE_PATH], creationflags=CREATE_NO_WINDOW)
                 self.after(1500, self.destroy)
             else:
-                self._log("❌ Build fehlgeschlagen. Prüfe ob Python installiert ist.", "red")
-
+                self._log("❌ Build fehlgeschlagen.", "red")
         except Exception as e:
             self._log(f"❌ Update-Fehler: {e}", "red")
         finally:
@@ -331,7 +453,7 @@ class App(tk.Tk):
     def _start_download(self):
         url = self.url_var.get().strip()
         if not url:
-            messagebox.showwarning("Kein Link", "Kein YouTube/SoundCloud Link gefunden!")
+            messagebox.showwarning("Kein Link", "Kein Link gefunden!")
             return
         if not os.path.exists(YTDLP_PATH):
             messagebox.showerror("Tools fehlen", "Bitte warten – Tools werden noch installiert.")
@@ -344,23 +466,15 @@ class App(tk.Tk):
         self.last_file = None
         self._log(f"\n▶  Download startet...")
         out = os.path.join(self.output_dir.get(), "%(title)s.%(ext)s")
-        cmd = [
-            YTDLP_PATH,
-            "-x", "--audio-format", "mp3",
-            "--audio-quality", self.quality_var.get(),
-            "--ffmpeg-location", TOOLS_DIR,
-            "-o", out,
-            "--no-playlist",
-            "--print", "after_move:filepath",
-            url
-        ]
+        cmd = [YTDLP_PATH, "-x", "--audio-format", "mp3",
+               "--audio-quality", self.quality_var.get(),
+               "--ffmpeg-location", TOOLS_DIR,
+               "-o", out, "--no-playlist",
+               "--print", "after_move:filepath", url]
         try:
-            proc = subprocess.Popen(
-                cmd,
-                stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                text=True, encoding="utf-8", errors="replace",
-                creationflags=CREATE_NO_WINDOW
-            )
+            proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                    text=True, encoding="utf-8", errors="replace",
+                                    creationflags=CREATE_NO_WINDOW)
             for line in proc.stdout:
                 line = line.rstrip()
                 if not line: continue
@@ -372,8 +486,7 @@ class App(tk.Tk):
             if proc.returncode == 0:
                 self._log(f"\n✅ Fertig! Gespeichert in: {self.output_dir.get()}", "green")
                 self.url_var.set("")
-                folder = self.output_dir.get()
-                last   = self.last_file
+                folder, last = self.output_dir.get(), self.last_file
                 self.after(0, lambda: self._show_success(folder))
                 self.after(500, lambda: self._open_in_explorer(last))
             else:
