@@ -9,8 +9,10 @@ import urllib.parse
 import zipfile
 import shutil
 import re
+import base64
+import tempfile
 
-VERSION    = "1.6"
+VERSION    = "1.7"
 APP_NAME   = "MP3 Song App"
 GITHUB_RAW = "https://raw.githubusercontent.com/alex63494711-cmd/alex-mp3-song-app/refs/heads/main/mp3downloader.py"
 
@@ -38,25 +40,58 @@ SPOTIFY_CLR = "#1db954"
 
 CREATE_NO_WINDOW = 0x08000000
 
+# Musik-Note Icon als ICO (base64 encoded minimal icon)
+ICON_B64 = (
+    "AAABAAEAICAAAAEAIACoEAAAFgAAACgAAAAgAAAAQAAAAAEAIAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP///"
+    "wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP"
+    "//////////////////////////////////////////////////////////////////AAAAAAAAAAA"
+)
+
 class App(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title(f"{APP_NAME}  v{VERSION}")
-        self.geometry("660x820")
-        self.resizable(False, False)
+        self.minsize(600, 500)
+        self.geometry("660x750")
+        self.resizable(True, True)   # ← größenveränderbar!
         self.configure(bg=BG)
         self.output_dir  = tk.StringVar(value=os.path.join(os.path.expanduser("~"), "Music"))
         self.quality_var = tk.StringVar(value="0")
         self.url_var     = tk.StringVar()
         self.open_folder = tk.BooleanVar(value=True)
         self.last_file   = None
+        self._set_icon()
         self._build_ui()
         self.after(300, self._check_tools)
         self.bind("<Control-v>", self._on_ctrl_v)
         self.bind("<Control-V>", self._on_ctrl_v)
         self.focus_force()
 
-    # ── Strg+V global ────────────────────────────────────────────────────────
+    def _set_icon(self):
+        # Musik-Note Icon via PhotoImage (kein .ico nötig)
+        icon_data = """
+            R0lGODlhIAAgAMQAAAAAABERESIiIjMzM0RERExMTFVVVWZmZnNzc4SEhJWVlaWlpbW1
+            tcbGxtbW1uXl5fDw8P///wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+            AAAAAAAAAAAAACH5BAEAAAAALAAAAAAgACAAAAX+ICCOZGmeaKqubOu+cCzPdG3feK7v
+            fO//wKBwSCwaj8ikcslsOp/QqHRKrVqv2Kx2y+16v+CweEwum8/otHrNbrvf8Lh8Tq
+            /b7/i8fs/v+/+AgYKDhIWGh4iJiouMjY6PkJGSk5SVlpeYmZqbnJ2en6ChoqOkpaan
+            qKmqq6ytrq+wsbKztLW2t7i5uru8vb6/wMHCw8TFxsfIycrLzM3Oz9DR0tPU1dbX2N
+            na29zd3t/g4eLj5OXm5+jp6uvs7e7v8PHy8/T19vf4+fr7/P3+/wADChxIsKDBgwgT
+            KlzIsKHDhxAjSpxIsaLFixgzatzIsaPHjyBDihxJsqTJkyhTqlzJsqXLlzBjypxJs6
+            bNmzhz6tzJs6fPn0CDCh1KtKjRo0iTKl3KtKnTp1CjSp1KtarVq1izat3KtavXr2DD
+            ih1LtqzZs2jTql3Ltq3bt3Djyp1Lt67du3jz6t3Lt6/fv4ADCx5MuLDhw4gTK17MuL
+            Hjx5AjS55MubLly5gza97MubPnz6BDix5NurTp06hTq17NurXr17Bjy55Nu7bt27hz6
+            97Nu7fv38CDE5dNEAA7
+        """
+        try:
+            img = tk.PhotoImage(data=icon_data)
+            self.iconphoto(True, img)
+        except:
+            pass
+
+    # ── Strg+V ───────────────────────────────────────────────────────────────
     def _on_ctrl_v(self, event=None):
         try:
             clip = self.clipboard_get().strip()
@@ -66,22 +101,47 @@ class App(tk.Tk):
                 self.after(300, self._spotify_to_yt)
             elif clip.startswith("http"):
                 self.url_var.set(clip)
-                self._log("📋 YouTube/SoundCloud Link – starte Download...")
+                self._log("📋 Link eingefügt – starte Download...")
                 self.after(300, self._start_download)
-            else:
-                # Könnte ein Songname sein
-                self.search_var.set(clip)
-                self._log(f"🔍 Songname erkannt: {clip}")
         except:
             pass
 
     # ── UI ───────────────────────────────────────────────────────────────────
     def _build_ui(self):
+        # Scrollbarer Hauptbereich
+        outer = tk.Frame(self, bg=BG)
+        outer.pack(fill="both", expand=True)
+
+        canvas = tk.Canvas(outer, bg=BG, highlightthickness=0)
+        sb = tk.Scrollbar(outer, orient="vertical", command=canvas.yview)
+        canvas.configure(yscrollcommand=sb.set)
+        sb.pack(side="right", fill="y")
+        canvas.pack(side="left", fill="both", expand=True)
+
+        self.inner = tk.Frame(canvas, bg=BG)
+        self.inner_id = canvas.create_window((0, 0), window=self.inner, anchor="nw")
+
+        def _resize(e):
+            canvas.itemconfig(self.inner_id, width=e.width)
+        canvas.bind("<Configure>", _resize)
+        self.inner.bind("<Configure>", lambda e: canvas.configure(
+            scrollregion=canvas.bbox("all")))
+
+        # Mausrad scrollen
+        def _scroll(e):
+            canvas.yview_scroll(int(-1 * (e.delta / 120)), "units")
+        canvas.bind_all("<MouseWheel>", _scroll)
+
+        self._build_content(self.inner)
+
+    def _build_content(self, parent):
+        p = parent
+
         # ── Header ──
-        hdr = tk.Frame(self, bg=BG)
-        hdr.pack(fill="x", padx=28, pady=(24, 0))
+        hdr = tk.Frame(p, bg=BG)
+        hdr.pack(fill="x", padx=24, pady=(20, 0))
         tk.Label(hdr, text="🎵 MP3 Song App",
-                 font=("Segoe UI Black", 22, "bold"),
+                 font=("Segoe UI Black", 20, "bold"),
                  bg=BG, fg=TEXT).pack(side="left")
         self.upd_btn = tk.Button(hdr, text="🔄 Update",
                                  font=("Segoe UI", 9, "bold"),
@@ -89,145 +149,158 @@ class App(tk.Tk):
                                  activebackground=ACCENT, activeforeground="white",
                                  relief="flat", cursor="hand2", bd=0,
                                  command=self._check_update)
-        self.upd_btn.pack(side="right", ipadx=12, ipady=6)
-        tk.Label(self, text=f"v{VERSION}  –  YouTube · SoundCloud · Spotify · Songname",
-                 font=("Segoe UI", 9), bg=BG, fg=SUBTEXT).pack(anchor="w", padx=28, pady=(3, 16))
+        self.upd_btn.pack(side="right", ipadx=10, ipady=5)
+        tk.Label(p, text=f"v{VERSION}  –  YouTube · SoundCloud · Spotify · Songname",
+                 font=("Segoe UI", 9), bg=BG, fg=SUBTEXT).pack(anchor="w", padx=24, pady=(2, 12))
 
-        # ── Karten ──
-        self._card_url()
-        self._card_search()
-        self._card_spotify()
-        self._card_folder()
-        self._card_quality()
-        self._card_settings()
+        self._card_url(p)
+        self._card_search(p)
+        self._card_spotify(p)
+        self._card_folder(p)
+        self._card_quality(p)
+        self._card_settings(p)
 
         # ── Download Button ──
-        self.dl_btn = tk.Button(self, text="⬇   MP3 herunterladen",
-                                font=("Segoe UI", 13, "bold"),
+        self.dl_btn = tk.Button(p, text="⬇   MP3 herunterladen",
+                                font=("Segoe UI", 12, "bold"),
                                 bg=ACCENT, fg="white",
                                 activebackground=ACCENT2, activeforeground="white",
                                 relief="flat", cursor="hand2", height=2,
                                 command=self._start_download)
-        self.dl_btn.pack(fill="x", padx=28, pady=(8, 10))
+        self.dl_btn.pack(fill="x", padx=24, pady=(6, 8))
 
         # ── Progressbar ──
         style = ttk.Style()
         style.theme_use("default")
         style.configure("TProgressbar", troughcolor=CARD, background=ACCENT, thickness=4)
-        self.prog = ttk.Progressbar(self, style="TProgressbar", mode="indeterminate")
-        self.prog.pack(fill="x", padx=28)
+        self.prog = ttk.Progressbar(p, style="TProgressbar", mode="indeterminate")
+        self.prog.pack(fill="x", padx=24)
 
         # ── Erfolgs-Banner ──
-        self.success_frame = tk.Frame(self, bg=SUCCESS_DIM,
+        self.success_frame = tk.Frame(p, bg=SUCCESS_DIM,
                                       highlightthickness=1, highlightbackground=SUCCESS)
         tk.Label(self.success_frame, text="✅  Download fertig!",
-                 font=("Segoe UI Black", 15, "bold"),
-                 bg=SUCCESS_DIM, fg=SUCCESS).pack(pady=(12, 2))
+                 font=("Segoe UI Black", 14, "bold"),
+                 bg=SUCCESS_DIM, fg=SUCCESS).pack(pady=(10, 2))
         self.success_path = tk.Label(self.success_frame, text="",
                                      font=("Segoe UI", 9),
                                      bg=SUCCESS_DIM, fg=SUCCESS)
-        self.success_path.pack(pady=(0, 12))
+        self.success_path.pack(pady=(0, 10))
 
         # ── Log ──
-        lf = tk.Frame(self, bg=CARD, highlightthickness=1, highlightbackground=BORDER)
-        lf.pack(fill="both", expand=True, padx=28, pady=(12, 20))
+        lf = tk.Frame(p, bg=CARD, highlightthickness=1, highlightbackground=BORDER)
+        lf.pack(fill="x", padx=24, pady=(10, 20))
         tk.Label(lf, text="LOG", font=("Segoe UI", 8, "bold"),
-                 bg=CARD, fg=SUBTEXT).pack(anchor="w", padx=12, pady=(8, 0))
+                 bg=CARD, fg=SUBTEXT).pack(anchor="w", padx=10, pady=(6, 0))
         self.log = tk.Text(lf, bg=CARD, fg=TEXT, font=("Consolas", 9),
-                           relief="flat", bd=0, height=5,
+                           relief="flat", bd=0, height=6,
                            insertbackground=ACCENT, wrap="word", state="disabled")
-        self.log.pack(fill="both", expand=True, padx=12, pady=(2, 10))
+        self.log.pack(fill="x", padx=10, pady=(2, 8))
         self.log.tag_configure("green",   foreground=SUCCESS)
         self.log.tag_configure("red",     foreground="#f87171")
         self.log.tag_configure("normal",  foreground=TEXT)
         self.log.tag_configure("spotify", foreground=SPOTIFY_CLR)
 
     # ── Karten ───────────────────────────────────────────────────────────────
-    def _card_url(self):
-        f = self._card("🔗  YouTube / SoundCloud Link  (oder Strg+V)")
+    def _card_url(self, p):
+        f = self._card(p, "🔗  YouTube / SoundCloud Link  (oder Strg+V)")
         row = tk.Frame(f, bg=CARD)
-        row.pack(fill="x", padx=14, pady=(0, 12))
-        tk.Entry(row, textvariable=self.url_var, font=("Segoe UI", 11),
+        row.pack(fill="x", padx=12, pady=(0, 10))
+        tk.Entry(row, textvariable=self.url_var, font=("Segoe UI", 10),
                  bg="#0f0f18", fg=TEXT, insertbackground=TEXT,
                  relief="flat", highlightthickness=1,
                  highlightbackground=BORDER, highlightcolor=ACCENT
-                 ).pack(side="left", fill="x", expand=True, ipady=8, ipadx=10)
-        tk.Button(row, text="📋", font=("Segoe UI", 11),
+                 ).pack(side="left", fill="x", expand=True, ipady=7, ipadx=8)
+        tk.Button(row, text="📋", font=("Segoe UI", 10),
                   bg=BTN_SEC, fg=TEXT, activebackground=ACCENT,
                   activeforeground="white", relief="flat", cursor="hand2",
                   command=lambda: self._paste_to(self.url_var)
-                  ).pack(side="left", padx=(6, 0), ipady=6, ipadx=10)
+                  ).pack(side="left", padx=(5, 0), ipady=5, ipadx=8)
 
-    def _card_search(self):
-        f = self._card("🔍  Songname eingeben → automatisch suchen & laden")
+    def _card_search(self, p):
+        f = self._card(p, "🔍  Songname + Künstler → automatisch suchen & laden")
         row = tk.Frame(f, bg=CARD)
-        row.pack(fill="x", padx=14, pady=(0, 12))
+        row.pack(fill="x", padx=12, pady=(0, 6))
+        # Song + Künstler nebeneinander
+        tk.Label(row, text="Song:", font=("Segoe UI", 9), bg=CARD, fg=SUBTEXT, width=7
+                 ).pack(side="left")
         self.search_var = tk.StringVar()
-        tk.Entry(row, textvariable=self.search_var, font=("Segoe UI", 11),
+        tk.Entry(row, textvariable=self.search_var, font=("Segoe UI", 10),
                  bg="#0f0f18", fg=TEXT, insertbackground=TEXT,
                  relief="flat", highlightthickness=1,
                  highlightbackground=BORDER, highlightcolor=ACCENT
-                 ).pack(side="left", fill="x", expand=True, ipady=8, ipadx=10)
-        tk.Button(row, text="🔍 Suchen & laden",
+                 ).pack(side="left", fill="x", expand=True, ipady=7, ipadx=8)
+
+        row2 = tk.Frame(f, bg=CARD)
+        row2.pack(fill="x", padx=12, pady=(4, 10))
+        tk.Label(row2, text="Künstler:", font=("Segoe UI", 9), bg=CARD, fg=SUBTEXT, width=7
+                 ).pack(side="left")
+        self.artist_var = tk.StringVar()
+        tk.Entry(row2, textvariable=self.artist_var, font=("Segoe UI", 10),
+                 bg="#0f0f18", fg=TEXT, insertbackground=TEXT,
+                 relief="flat", highlightthickness=1,
+                 highlightbackground=BORDER, highlightcolor=ACCENT
+                 ).pack(side="left", fill="x", expand=True, ipady=7, ipadx=8)
+        tk.Button(row2, text="🔍 Suchen & laden",
                   font=("Segoe UI", 10, "bold"),
                   bg=ACCENT, fg="white",
                   activebackground=ACCENT2, activeforeground="white",
                   relief="flat", cursor="hand2",
                   command=self._search_by_name
-                  ).pack(side="left", padx=(8, 0), ipady=6, ipadx=14)
+                  ).pack(side="left", padx=(8, 0), ipady=5, ipadx=12)
 
-    def _card_spotify(self):
-        f = self._card("🟢  Spotify-Link → findet Song auf YouTube & lädt ihn")
+    def _card_spotify(self, p):
+        f = self._card(p, "🟢  Spotify-Link → findet Song auf YouTube & lädt ihn")
         row = tk.Frame(f, bg=CARD)
-        row.pack(fill="x", padx=14, pady=(0, 12))
+        row.pack(fill="x", padx=12, pady=(0, 10))
         self.spotify_var = tk.StringVar()
-        tk.Entry(row, textvariable=self.spotify_var, font=("Segoe UI", 11),
+        tk.Entry(row, textvariable=self.spotify_var, font=("Segoe UI", 10),
                  bg="#0f0f18", fg=TEXT, insertbackground=TEXT,
                  relief="flat", highlightthickness=1,
                  highlightbackground=BORDER, highlightcolor=SPOTIFY_CLR
-                 ).pack(side="left", fill="x", expand=True, ipady=8, ipadx=10)
-        tk.Button(row, text="📋", font=("Segoe UI", 11),
+                 ).pack(side="left", fill="x", expand=True, ipady=7, ipadx=8)
+        tk.Button(row, text="📋", font=("Segoe UI", 10),
                   bg=BTN_SEC, fg=TEXT, activebackground=SPOTIFY_CLR,
                   activeforeground="white", relief="flat", cursor="hand2",
                   command=lambda: self._paste_to(self.spotify_var)
-                  ).pack(side="left", padx=(6, 0), ipady=6, ipadx=10)
+                  ).pack(side="left", padx=(5, 0), ipady=5, ipadx=8)
         tk.Button(row, text="🎵 Laden",
                   font=("Segoe UI", 10, "bold"),
                   bg=SPOTIFY_CLR, fg="white",
                   activebackground="#17a349", activeforeground="white",
                   relief="flat", cursor="hand2",
                   command=self._spotify_to_yt
-                  ).pack(side="left", padx=(6, 0), ipady=6, ipadx=14)
+                  ).pack(side="left", padx=(5, 0), ipady=5, ipadx=12)
 
-    def _card_folder(self):
-        f = self._card("📁  Speicherordner")
+    def _card_folder(self, p):
+        f = self._card(p, "📁  Speicherordner")
         row = tk.Frame(f, bg=CARD)
-        row.pack(fill="x", padx=14, pady=(0, 12))
-        tk.Label(row, textvariable=self.output_dir, font=("Segoe UI", 10),
+        row.pack(fill="x", padx=12, pady=(0, 10))
+        tk.Label(row, textvariable=self.output_dir, font=("Segoe UI", 9),
                  bg="#0f0f18", fg=TEXT, anchor="w",
                  highlightthickness=1, highlightbackground=BORDER
-                 ).pack(side="left", fill="x", expand=True, ipady=8, ipadx=10)
+                 ).pack(side="left", fill="x", expand=True, ipady=7, ipadx=8)
         tk.Button(row, text="Auswählen", font=("Segoe UI", 9),
                   bg=BTN_SEC, fg=TEXT, activebackground=ACCENT,
                   activeforeground="white", relief="flat", cursor="hand2",
                   command=self._browse
-                  ).pack(side="left", padx=(8, 0), ipady=6, ipadx=12)
+                  ).pack(side="left", padx=(6, 0), ipady=5, ipadx=10)
 
-    def _card_quality(self):
-        f = self._card("🎚️  Qualität")
+    def _card_quality(self, p):
+        f = self._card(p, "🎚️  Qualität")
         row = tk.Frame(f, bg=CARD)
-        row.pack(fill="x", padx=14, pady=(0, 12))
+        row.pack(fill="x", padx=12, pady=(0, 10))
         for label, val in [("Beste (320kbps)", "0"), ("Gut (192kbps)", "5"), ("Normal (128kbps)", "9")]:
             tk.Radiobutton(row, text=label, variable=self.quality_var, value=val,
                            bg=CARD, fg=TEXT, selectcolor=BG,
                            activebackground=CARD, activeforeground=ACCENT,
                            font=("Segoe UI", 10), cursor="hand2"
-                           ).pack(side="left", padx=(0, 20))
+                           ).pack(side="left", padx=(0, 16))
 
-    def _card_settings(self):
-        f = self._card("⚙️  Einstellungen")
+    def _card_settings(self, p):
+        f = self._card(p, "⚙️  Einstellungen")
         row = tk.Frame(f, bg=CARD)
-        row.pack(fill="x", padx=14, pady=(0, 12))
+        row.pack(fill="x", padx=12, pady=(0, 10))
         tk.Checkbutton(row,
                        text="📂  Dateimanager nach Download öffnen (Datei markiert)",
                        variable=self.open_folder,
@@ -236,11 +309,11 @@ class App(tk.Tk):
                        font=("Segoe UI", 10), cursor="hand2"
                        ).pack(anchor="w")
 
-    def _card(self, title):
-        f = tk.Frame(self, bg=CARD, highlightthickness=1, highlightbackground=BORDER)
-        f.pack(fill="x", padx=28, pady=(0, 8))
+    def _card(self, parent, title):
+        f = tk.Frame(parent, bg=CARD, highlightthickness=1, highlightbackground=BORDER)
+        f.pack(fill="x", padx=24, pady=(0, 8))
         tk.Label(f, text=title, font=("Segoe UI", 9, "bold"),
-                 bg=CARD, fg=SUBTEXT).pack(anchor="w", padx=14, pady=(10, 4))
+                 bg=CARD, fg=SUBTEXT).pack(anchor="w", padx=12, pady=(8, 4))
         return f
 
     # ── Helpers ──────────────────────────────────────────────────────────────
@@ -260,7 +333,7 @@ class App(tk.Tk):
 
     def _show_success(self, folder):
         self.success_path.configure(text=f"📁  {folder}")
-        self.success_frame.pack(fill="x", padx=28, pady=(10, 0), before=self.prog)
+        self.success_frame.pack(fill="x", padx=24, pady=(8, 0), before=self.prog)
         self.after(6000, self._hide_success)
 
     def _hide_success(self):
@@ -282,25 +355,38 @@ class App(tk.Tk):
             subprocess.Popen(["explorer", "/select,", os.path.normpath(filepath)],
                              creationflags=CREATE_NO_WINDOW)
 
-    # ── Songname suchen ──────────────────────────────────────────────────────
-    def _search_by_name(self):
-        name = self.search_var.get().strip()
-        if not name:
-            messagebox.showwarning("Kein Name", "Bitte einen Songnamen eingeben!")
-            return
-        threading.Thread(target=self._do_name_search, args=(name,), daemon=True).start()
+    # ── YouTube Suche ────────────────────────────────────────────────────────
+    def _youtube_search(self, query):
+        q = urllib.parse.quote(query)
+        url = f"https://www.youtube.com/results?search_query={q}"
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            html = resp.read().decode("utf-8", errors="ignore")
+        m = re.search(r'"videoId":"([a-zA-Z0-9_-]{11})"', html)
+        return f"https://www.youtube.com/watch?v={m.group(1)}" if m else None
 
-    def _do_name_search(self, name):
+    # ── Songname + Künstler suchen ───────────────────────────────────────────
+    def _search_by_name(self):
+        song   = self.search_var.get().strip()
+        artist = self.artist_var.get().strip()
+        if not song:
+            messagebox.showwarning("Kein Songname", "Bitte einen Songnamen eingeben!")
+            return
+        query = f"{artist} {song}".strip() if artist else song
+        threading.Thread(target=self._do_name_search, args=(query,), daemon=True).start()
+
+    def _do_name_search(self, query):
         self._set_busy(True)
         try:
-            self._log(f"🔍 Suche: {name}")
-            yt_url = self._youtube_search(name)
+            self._log(f"🔍 Suche: {query}")
+            yt_url = self._youtube_search(query + " official audio")
             if not yt_url:
                 self._log("❌ Kein Ergebnis gefunden.", "red")
                 return
             self._log(f"✅ Gefunden: {yt_url}", "green")
             self.url_var.set(yt_url)
             self.search_var.set("")
+            self.artist_var.set("")
             self.after(0, self._start_download)
         except Exception as e:
             self._log(f"❌ Fehler: {e}", "red")
@@ -319,46 +405,29 @@ class App(tk.Tk):
         self._set_busy(True)
         try:
             self._log("🎵 Lese Spotify-Link...", "spotify")
-            req = urllib.request.Request(spotify_url,
-                                         headers={"User-Agent": "Mozilla/5.0"})
+            req = urllib.request.Request(spotify_url, headers={"User-Agent": "Mozilla/5.0"})
             with urllib.request.urlopen(req, timeout=10) as resp:
                 html = resp.read().decode("utf-8", errors="ignore")
-
             title_match = re.search(r"<title>(.*?)</title>", html)
             if not title_match:
                 self._log("❌ Konnte Songtitel nicht lesen.", "red")
                 return
-
             raw = title_match.group(1)
             song_name = re.sub(r"\s*[|\-–]\s*Spotify.*$", "", raw).strip()
             self._log(f"🎵 Song: {song_name}", "spotify")
             self._log("🔍 Suche auf YouTube...", "spotify")
-
             yt_url = self._youtube_search(song_name + " official audio")
             if not yt_url:
                 self._log("❌ Kein YouTube-Video gefunden.", "red")
                 return
-
             self._log(f"✅ YouTube: {yt_url}", "green")
             self.url_var.set(yt_url)
             self.spotify_var.set("")
             self.after(0, self._start_download)
-
         except Exception as e:
             self._log(f"❌ Fehler: {e}", "red")
         finally:
             self._set_busy(False)
-
-    def _youtube_search(self, query):
-        q = urllib.parse.quote(query)
-        url = f"https://www.youtube.com/results?search_query={q}"
-        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            html = resp.read().decode("utf-8", errors="ignore")
-        m = re.search(r'"videoId":"([a-zA-Z0-9_-]{11})"', html)
-        if m:
-            return f"https://www.youtube.com/watch?v={m.group(1)}"
-        return None
 
     # ── Tools installieren ───────────────────────────────────────────────────
     def _check_tools(self):
@@ -392,8 +461,8 @@ class App(tk.Tk):
                             break
                 os.remove(zp)
                 for d in os.listdir(TOOLS_DIR):
-                    p = os.path.join(TOOLS_DIR, d)
-                    if os.path.isdir(p): shutil.rmtree(p, ignore_errors=True)
+                    p2 = os.path.join(TOOLS_DIR, d)
+                    if os.path.isdir(p2): shutil.rmtree(p2, ignore_errors=True)
                 self._log("✅ ffmpeg installiert.", "green")
             self._log("🎉 Alles bereit!", "green")
         except Exception as e:
