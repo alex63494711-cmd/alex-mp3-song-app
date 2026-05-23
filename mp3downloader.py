@@ -3,7 +3,7 @@ from tkinter import filedialog, messagebox, ttk
 import threading, subprocess, os, sys, re, shutil, zipfile
 import urllib.request, urllib.parse
 
-VERSION    = "2.2"
+VERSION    = "2.3"
 APP_NAME   = "WaveLoad"
 APP_SUB    = "MP3 Downloader"
 GITHUB_RAW = "https://raw.githubusercontent.com/alex63494711-cmd/alex-mp3-song-app/refs/heads/main/mp3downloader.py"
@@ -193,7 +193,7 @@ class App(tk.Tk):
         self._sbc.pack(side="right", fill="y", padx=(0,3))
         self._thumb = self._sbc.create_rectangle(0, 0, 6, 60,
                       fill=ACCENT, outline="", width=0)
-        self._sbc.tag_configure(self._thumb)
+
 
         def _yscroll(first, last):
             try: f, l = float(first), float(last)
