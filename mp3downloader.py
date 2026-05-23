@@ -12,7 +12,7 @@ import re
 import base64
 import tempfile
 
-VERSION    = "1.7"
+VERSION    = "1.9"
 APP_NAME   = "MP3 Song App"
 GITHUB_RAW = "https://raw.githubusercontent.com/alex63494711-cmd/alex-mp3-song-app/refs/heads/main/mp3downloader.py"
 
@@ -40,14 +40,16 @@ SPOTIFY_CLR = "#1db954"
 
 CREATE_NO_WINDOW = 0x08000000
 
-# Musik-Note Icon als ICO (base64 encoded minimal icon)
-ICON_B64 = (
-    "AAABAAEAICAAAAEAIACoEAAAFgAAACgAAAAgAAAAQAAAAAEAIAAAAAAAAAAAAAAAAAAAAAAAAAAA"
-    "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
-    "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP///"
-    "wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP"
-    "//////////////////////////////////////////////////////////////////AAAAAAAAAAA"
-)
+def _get_icon_path():
+    for candidate in [
+        os.path.join(BASE_DIR, "icon.ico"),
+        os.path.join(os.path.dirname(os.path.abspath(
+            sys.executable if getattr(sys, 'frozen', False) else __file__
+        )), "icon.ico"),
+    ]:
+        if os.path.exists(candidate):
+            return candidate
+    return None
 
 class App(tk.Tk):
     def __init__(self):
@@ -62,34 +64,35 @@ class App(tk.Tk):
         self.url_var     = tk.StringVar()
         self.open_folder = tk.BooleanVar(value=True)
         self.last_file   = None
-        self._set_icon()
         self._build_ui()
+        self.after(100, self._set_icon)
         self.after(300, self._check_tools)
         self.bind("<Control-v>", self._on_ctrl_v)
         self.bind("<Control-V>", self._on_ctrl_v)
         self.focus_force()
 
     def _set_icon(self):
-        # Musik-Note Icon via PhotoImage (kein .ico nötig)
-        icon_data = """
-            R0lGODlhIAAgAMQAAAAAABERESIiIjMzM0RERExMTFVVVWZmZnNzc4SEhJWVlaWlpbW1
-            tcbGxtbW1uXl5fDw8P///wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
-            AAAAAAAAAAAAACH5BAEAAAAALAAAAAAgACAAAAX+ICCOZGmeaKqubOu+cCzPdG3feK7v
-            fO//wKBwSCwaj8ikcslsOp/QqHRKrVqv2Kx2y+16v+CweEwum8/otHrNbrvf8Lh8Tq
-            /b7/i8fs/v+/+AgYKDhIWGh4iJiouMjY6PkJGSk5SVlpeYmZqbnJ2en6ChoqOkpaan
-            qKmqq6ytrq+wsbKztLW2t7i5uru8vb6/wMHCw8TFxsfIycrLzM3Oz9DR0tPU1dbX2N
-            na29zd3t/g4eLj5OXm5+jp6uvs7e7v8PHy8/T19vf4+fr7/P3+/wADChxIsKDBgwgT
-            KlzIsKHDhxAjSpxIsaLFixgzatzIsaPHjyBDihxJsqTJkyhTqlzJsqXLlzBjypxJs6
-            bNmzhz6tzJs6fPn0CDCh1KtKjRo0iTKl3KtKnTp1CjSp1KtarVq1izat3KtavXr2DD
-            ih1LtqzZs2jTql3Ltq3bt3Djyp1Lt67du3jz6t3Lt6/fv4ADCx5MuLDhw4gTK17MuL
-            Hjx5AjS55MubLly5gza97MubPnz6BDix5NurTp06hTq17NurXr17Bjy55Nu7bt27hz6
-            97Nu7fv38CDE5dNEAA7
-        """
-        try:
-            img = tk.PhotoImage(data=icon_data)
-            self.iconphoto(True, img)
-        except:
-            pass
+        ico = _get_icon_path()
+        if ico:
+            try:
+                self.iconbitmap(ico)
+            except:
+                pass
+        else:
+            # Fallback: einfaches PhotoImage Icon
+            try:
+                img = tk.PhotoImage(width=32, height=32)
+                # Lila Hintergrund + weißes Noten-Symbol
+                for y in range(32):
+                    for x in range(32):
+                        dx, dy = x - 16, y - 16
+                        if dx*dx + dy*dy <= 14*14:
+                            img.put("#a855f7", (x, y))
+                        else:
+                            img.put("#00000000", (x, y))
+                self.iconphoto(True, img)
+            except:
+                pass
 
     # ── Strg+V ───────────────────────────────────────────────────────────────
     def _on_ctrl_v(self, event=None):
@@ -112,11 +115,48 @@ class App(tk.Tk):
         outer = tk.Frame(self, bg=BG)
         outer.pack(fill="both", expand=True)
 
-        canvas = tk.Canvas(outer, bg=BG, highlightthickness=0)
-        sb = tk.Scrollbar(outer, orient="vertical", command=canvas.yview)
-        canvas.configure(yscrollcommand=sb.set)
-        sb.pack(side="right", fill="y")
-        canvas.pack(side="left", fill="both", expand=True)
+        self._canvas = tk.Canvas(outer, bg=BG, highlightthickness=0)
+        self._canvas.pack(side="left", fill="both", expand=True)
+
+        # Eigene Scrollbar als Canvas-Balken (passt zum Design)
+        self._sb_canvas = tk.Canvas(outer, bg=BG, width=8, highlightthickness=0)
+        self._sb_canvas.pack(side="right", fill="y")
+        self._sb_thumb = self._sb_canvas.create_rectangle(
+            2, 0, 6, 40, fill=ACCENT, outline="", width=0)
+
+        def _update_thumb(*args):
+            # args = (first, last) als Strings von 0.0–1.0
+            try:
+                first, last = float(args[0]), float(args[1])
+            except:
+                return
+            h = self._sb_canvas.winfo_height()
+            if h < 2: return
+            y0 = int(first * h)
+            y1 = int(last  * h)
+            # Mindesthöhe 20px, abgerundete Optik via Padding
+            if y1 - y0 < 20: y1 = y0 + 20
+            self._sb_canvas.coords(self._sb_thumb, 2, y0+2, 6, y1-2)
+            # Nur anzeigen wenn nötig
+            if first <= 0.0 and last >= 1.0:
+                self._sb_canvas.configure(width=0)
+            else:
+                self._sb_canvas.configure(width=10)
+
+        def _sb_click(e):
+            h = self._sb_canvas.winfo_height()
+            if h < 2: return
+            frac = e.y / h
+            self._canvas.yview_moveto(frac)
+
+        def _sb_drag(e):
+            _sb_click(e)
+
+        self._sb_canvas.bind("<Button-1>", _sb_click)
+        self._sb_canvas.bind("<B1-Motion>", _sb_drag)
+
+        canvas = self._canvas
+        canvas.configure(yscrollcommand=_update_thumb)
 
         self.inner = tk.Frame(canvas, bg=BG)
         self.inner_id = canvas.create_window((0, 0), window=self.inner, anchor="nw")
