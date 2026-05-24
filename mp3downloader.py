@@ -3,7 +3,7 @@ from tkinter import filedialog, messagebox, ttk
 import threading, subprocess, os, sys, re, shutil, zipfile
 import urllib.request, urllib.parse
 
-VERSION    = "3.1"
+VERSION    = "3.2"
 APP_NAME   = "WaveLoad"
 GITHUB_RAW = "https://raw.githubusercontent.com/alex63494711-cmd/alex-mp3-song-app/refs/heads/main/mp3downloader.py"
 GITHUB_EXE = "https://github.com/alex63494711-cmd/alex-mp3-song-app/releases/latest/download/WaveLoad.exe"
@@ -67,6 +67,8 @@ class App(tk.Tk):
         self.geometry("700x760")
         self.resizable(True, True)
         self.configure(bg=BG)
+        # Outer wrapper auch BG damit Panel-Hintergrund stimmt
+        self.update_idletasks()
         self.output_dir  = tk.StringVar(value=os.path.join(os.path.expanduser("~"), "Music"))
         self.quality_var = tk.StringVar(value="0")
         self.url_var     = tk.StringVar()
@@ -163,8 +165,9 @@ class App(tk.Tk):
 
         self._build_main(self.inner)
 
-        # Settings panel – direkt auf dem Haupt-Canvas (kein schwarzer Hintergrund)
-        self._spanel = tk.Frame(self._cvs, bg=CARD2,
+        # Settings panel direkt auf Root (kein Canvas-Scroll-Problem)
+        # bg=BG damit kein schwarzer Rand sichtbar ist
+        self._spanel = tk.Frame(self, bg=CARD2,
                                 highlightthickness=1, highlightbackground=ACCENT)
         self._build_settings(self._spanel)
 
