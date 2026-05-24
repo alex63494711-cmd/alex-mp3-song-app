@@ -3,7 +3,7 @@ from tkinter import filedialog, messagebox, ttk
 import threading, subprocess, os, sys, re, shutil, zipfile
 import urllib.request, urllib.parse
 
-VERSION    = "2.9"
+VERSION    = "3.0"
 APP_NAME   = "WaveLoad"
 GITHUB_RAW = "https://raw.githubusercontent.com/alex63494711-cmd/alex-mp3-song-app/refs/heads/main/mp3downloader.py"
 GITHUB_EXE = "https://github.com/alex63494711-cmd/alex-mp3-song-app/releases/latest/download/WaveLoad.exe"
@@ -163,8 +163,8 @@ class App(tk.Tk):
 
         self._build_main(self.inner)
 
-        # Settings panel – schwebt über der App, kein Overlay-Hintergrund
-        self._spanel = tk.Frame(self, bg=CARD2,
+        # Settings panel – direkt auf dem Haupt-Canvas (kein schwarzer Hintergrund)
+        self._spanel = tk.Frame(self._cvs, bg=CARD2,
                                 highlightthickness=1, highlightbackground=ACCENT)
         self._build_settings(self._spanel)
 
@@ -245,19 +245,18 @@ class App(tk.Tk):
         self._anim_open(0)
 
     def _anim_open(self, step):
-        steps = 10
+        steps = 12
         if step > steps:
             self._panel_anim = False
+            self._spanel.place(relx=0.5, rely=0.5, anchor="center", width=500, height=400)
             return
         self._panel_anim = True
         t = step / steps
-        # ease out cubic
-        t2 = 1 - (1-t)**3
-        pw, ph = 500, 400
-        w = max(10, int(pw * t2))
-        h = max(10, int(ph * t2))
+        t2 = 1 - (1 - t) ** 3
+        w = max(10, int(500 * t2))
+        h = max(10, int(400 * t2))
         self._spanel.place(relx=0.5, rely=0.5, anchor="center", width=w, height=h)
-        self.after(16, lambda: self._anim_open(step+1))
+        self.after(14, lambda: self._anim_open(step + 1))
 
     def _close_settings(self):
         if self._panel_anim: return
