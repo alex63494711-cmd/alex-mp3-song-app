@@ -3,7 +3,7 @@ from tkinter import filedialog, messagebox, ttk
 import threading, subprocess, os, sys, re, shutil, zipfile
 import urllib.request, urllib.parse
 
-VERSION    = "2.8"
+VERSION    = "2.9"
 APP_NAME   = "WaveLoad"
 GITHUB_RAW = "https://raw.githubusercontent.com/alex63494711-cmd/alex-mp3-song-app/refs/heads/main/mp3downloader.py"
 GITHUB_EXE = "https://github.com/alex63494711-cmd/alex-mp3-song-app/releases/latest/download/WaveLoad.exe"
@@ -163,13 +163,10 @@ class App(tk.Tk):
 
         self._build_main(self.inner)
 
-        # Settings overlay – zentriertes Panel, nicht fullscreen
-        self._overlay = tk.Frame(self, bg="")
-        self._spanel  = tk.Frame(self._overlay, bg=CARD2,
-                                 highlightthickness=1, highlightbackground=ACCENT)
+        # Settings panel – schwebt über der App, kein Overlay-Hintergrund
+        self._spanel = tk.Frame(self, bg=CARD2,
+                                highlightthickness=1, highlightbackground=ACCENT)
         self._build_settings(self._spanel)
-        # Overlay abgedunkelter Hintergrund
-        self._overlay.configure(bg="#111111")
 
     def _smooth(self):
         self._sa = True
@@ -243,18 +240,8 @@ class App(tk.Tk):
     def _open_settings(self):
         if self._panel_anim or self._panel_visible: return
         self._panel_visible = True
-        # Overlay platzieren
-        self._overlay.place(x=0, y=0, relwidth=1.0, relheight=1.0)
-        self._overlay.lift()
-        # Panel zentriert, 480x360 groß
-        pw, ph = 500, 400
-        self._spanel.place(relx=0.5, rely=0.5, anchor="center",
-                           width=pw, height=ph)
+        self._spanel.place(relx=0.5, rely=0.5, anchor="center", width=10, height=10)
         self._spanel.lift()
-        # Klick auf Overlay schließt Panel
-        self._overlay.bind("<Button-1>", lambda e: self._close_settings())
-        self._spanel.bind("<Button-1>",  lambda e: "break")  # stop propagation
-        # Animate: scale from center
         self._anim_open(0)
 
     def _anim_open(self, step):
@@ -281,7 +268,7 @@ class App(tk.Tk):
         if step < 0:
             self._panel_anim = False
             self._panel_visible = False
-            self._overlay.place_forget()
+            self._spanel.place_forget()
             return
         self._panel_anim = True
         t = step / steps
