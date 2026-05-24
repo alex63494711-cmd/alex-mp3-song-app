@@ -3,7 +3,7 @@ from tkinter import filedialog, messagebox, ttk
 import threading, subprocess, os, sys, re, shutil, zipfile
 import urllib.request, urllib.parse
 
-VERSION    = "2.4"
+VERSION    = "2.5"
 APP_NAME   = "WaveLoad"
 APP_SUB    = "MP3 Downloader"
 GITHUB_RAW = "https://raw.githubusercontent.com/alex63494711-cmd/alex-mp3-song-app/refs/heads/main/mp3downloader.py"
@@ -18,14 +18,12 @@ YTDLP_URL   = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.
 FFMPEG_URL  = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip"
 
 BG       = "#08080f"
-BG2      = "#0e0e1a"
 CARD     = "#12121e"
 CARD2    = "#1a1a2e"
 BORDER   = "#2a2a4a"
 ACCENT   = "#8b5cf6"
 ACCENT_G = "#6d28d9"
 ACCENT_L = "#a78bfa"
-PINK     = "#ec4899"
 GREEN    = "#10b981"
 GREEN_L  = "#34d399"
 SPOTIFY  = "#1db954"
@@ -43,78 +41,17 @@ def get_icon_path():
         if os.path.exists(p): return p
     return None
 
-# ── Runder Button (fix: kein delete vor create_window) ───────────────────────
-class RoundButton(tk.Canvas):
-    def __init__(self, parent, text, command,
-                 bg_color=ACCENT, fg_color=TEXT, hover_color=ACCENT_L,
-                 width=160, height=38, radius=19,
-                 font=("Segoe UI", 10, "bold"), icon="", **kw):
-        super().__init__(parent, width=width, height=height,
-                         bg=parent["bg"], highlightthickness=0, **kw)
-        self._cmd    = command
-        self._bg     = bg_color
-        self._hover  = hover_color
-        self._fg     = fg_color
-        self._label  = (icon+" " if icon else "") + text
-        self._font   = font
-        self._r      = radius
-        self._w      = width
-        self._h      = height
-        self._active = True
-        self._draw(bg_color)
-        self._bind_events()
+def btn(parent, text, cmd, bg=ACCENT, fg=TEXT, hbg=ACCENT_L,
+        font=("Segoe UI", 10, "bold"), padx=18, pady=8, **kw):
+    """Einfacher flacher Button – kein Canvas, keine Bugs."""
+    b = tk.Button(parent, text=text, command=cmd,
+                  bg=bg, fg=fg, activebackground=hbg, activeforeground=fg,
+                  font=font, relief="flat", bd=0, cursor="hand2",
+                  padx=padx, pady=pady, **kw)
+    b.bind("<Enter>", lambda e: b.configure(bg=hbg))
+    b.bind("<Leave>", lambda e: b.configure(bg=bg))
+    return b
 
-    def _rr(self, x1, y1, x2, y2, r, **kw):
-        """Draw rounded rectangle using overlapping shapes."""
-        self.create_arc(x1,   y1,         x1+2*r, y1+2*r, start=90,  extent=90,  **kw)
-        self.create_arc(x2-2*r, y1,       x2,     y1+2*r, start=0,   extent=90,  **kw)
-        self.create_arc(x1,   y2-2*r,     x1+2*r, y2,     start=180, extent=90,  **kw)
-        self.create_arc(x2-2*r, y2-2*r,   x2,     y2,     start=270, extent=90,  **kw)
-        self.create_rectangle(x1+r, y1,   x2-r,   y2,     **kw)
-        self.create_rectangle(x1,   y1+r, x2,     y2-r,   **kw)
-
-    def _draw(self, color):
-        self.delete("all")   # safe – Canvas items, not widgets
-        self._rr(1, 1, self._w-1, self._h-1, self._r, fill=color, outline="")
-        self.create_text(self._w//2, self._h//2,
-                         text=self._label, fill=self._fg, font=self._font)
-
-    def _bind_events(self):
-        self.bind("<Enter>",           self._on_enter)
-        self.bind("<Leave>",           self._on_leave)
-        self.bind("<Button-1>",        self._on_press)
-        self.bind("<ButtonRelease-1>", self._on_release)
-
-    def _unbind_events(self):
-        for ev in ("<Enter>","<Leave>","<Button-1>","<ButtonRelease-1>"):
-            try: self.unbind(ev)
-            except: pass
-
-    def _on_enter(self, e):
-        if self._active: self._draw(self._hover); self.configure(cursor="hand2")
-    def _on_leave(self, e):
-        if self._active: self._draw(self._bg)
-    def _on_press(self, e):
-        if self._active: self._draw(ACCENT_G)
-    def _on_release(self, e):
-        if self._active:
-            self._draw(self._hover)
-            if self._cmd: self._cmd()
-
-    def configure_state(self, enabled):
-        self._active = enabled
-        if enabled:
-            self._draw(self._bg)
-            self._bind_events()
-        else:
-            self._unbind_events()
-            self.delete("all")
-            self._rr(1,1,self._w-1,self._h-1,self._r, fill=CARD2, outline="")
-            self.create_text(self._w//2, self._h//2,
-                             text="⏳  Lädt...", fill=TEXT3, font=self._font)
-            self.configure(cursor="")
-
-# ── Glow Entry ────────────────────────────────────────────────────────────────
 class GlowEntry(tk.Frame):
     def __init__(self, parent, textvariable, accent=ACCENT, **kw):
         super().__init__(parent, bg=parent["bg"])
@@ -127,7 +64,6 @@ class GlowEntry(tk.Frame):
         self._entry.bind("<FocusIn>",  lambda e: self._border.configure(bg=accent))
         self._entry.bind("<FocusOut>", lambda e: self._border.configure(bg=BORDER))
 
-# ── Haupt-App ─────────────────────────────────────────────────────────────────
 class App(tk.Tk):
     def __init__(self):
         super().__init__()
@@ -136,18 +72,16 @@ class App(tk.Tk):
         self.geometry("700x760")
         self.resizable(True, True)
         self.configure(bg=BG)
-
-        self.output_dir  = tk.StringVar(value=os.path.join(os.path.expanduser("~"), "Music"))
-        self.quality_var = tk.StringVar(value="0")
-        self.url_var     = tk.StringVar()
-        self.open_folder = tk.BooleanVar(value=True)
-        self.last_file   = None
-        self._scroll_y   = 0.0
+        self.output_dir   = tk.StringVar(value=os.path.join(os.path.expanduser("~"), "Music"))
+        self.quality_var  = tk.StringVar(value="0")
+        self.url_var      = tk.StringVar()
+        self.open_folder  = tk.BooleanVar(value=True)
+        self.last_file    = None
+        self._scroll_y    = 0.0
         self._scroll_anim = False
-        self._drag_y0    = None
-        self._drag_v0    = None
+        self._drag_y0     = None
+        self._drag_v0     = None
         self._settings_open = False
-
         self._build_ui()
         self.after(100, self._set_icon)
         self.after(400, self._check_tools)
@@ -174,20 +108,18 @@ class App(tk.Tk):
                 self.after(300, self._start_download)
         except: pass
 
-    # ── Haupt-Layout ─────────────────────────────────────────────────────────
+    # ── Layout ───────────────────────────────────────────────────────────────
     def _build_ui(self):
-        # Wrapper: links Scroll-Inhalt, rechts Scrollbar
         self._main = tk.Frame(self, bg=BG)
         self._main.pack(fill="both", expand=True)
 
         self._cvs = tk.Canvas(self._main, bg=BG, highlightthickness=0)
         self._cvs.pack(side="left", fill="both", expand=True)
 
-        # Scrollbar
         self._sbc = tk.Canvas(self._main, bg=BG, width=8, highlightthickness=0)
         self._sbc.pack(side="right", fill="y", padx=(0,2))
-        self._thumb = self._sbc.create_rectangle(1,0,7,50,
-                      fill=ACCENT, outline="", width=0)
+        self._thumb = self._sbc.create_rectangle(1, 0, 7, 50,
+                      fill=ACCENT, outline="")
 
         def _yscroll(first, last):
             try: f, l = float(first), float(last)
@@ -202,7 +134,6 @@ class App(tk.Tk):
 
         self._cvs.configure(yscrollcommand=_yscroll)
 
-        # Scrollbar drag
         def _sb_press(e):
             self._drag_y0 = e.y
             self._drag_v0 = self._cvs.yview()[0]
@@ -215,14 +146,12 @@ class App(tk.Tk):
             self._cvs.yview_moveto(pos)
             self._scroll_y = pos
         def _sb_release(e):
-            self._drag_y0 = None
-            self._drag_v0 = None
+            self._drag_y0 = None; self._drag_v0 = None
 
         self._sbc.bind("<ButtonPress-1>",   _sb_press)
         self._sbc.bind("<B1-Motion>",       _sb_motion)
         self._sbc.bind("<ButtonRelease-1>", _sb_release)
 
-        # Inner frame
         self.inner = tk.Frame(self._cvs, bg=BG)
         self._win  = self._cvs.create_window((0,0), window=self.inner, anchor="nw")
         self._cvs.bind("<Configure>",
@@ -230,7 +159,6 @@ class App(tk.Tk):
         self.inner.bind("<Configure>",
             lambda e: self._cvs.configure(scrollregion=self._cvs.bbox("all")))
 
-        # Smooth scroll
         def _mwheel(e):
             total = self.inner.winfo_reqheight()
             view  = self._cvs.winfo_height()
@@ -243,10 +171,10 @@ class App(tk.Tk):
 
         self._build_content(self.inner)
 
-        # Einstellungen-Panel (über allem, anfangs versteckt)
-        self._settings_panel = tk.Frame(self, bg=CARD2,
+        # Einstellungen-Panel (unsichtbar über allem)
+        self._spanel = tk.Frame(self, bg=CARD2,
             highlightthickness=1, highlightbackground=ACCENT)
-        self._build_settings_panel(self._settings_panel)
+        self._build_settings(self._spanel)
 
     def _smooth(self, cvs):
         self._scroll_anim = True
@@ -254,82 +182,80 @@ class App(tk.Tk):
         diff = self._scroll_y - cur
         if abs(diff) < 0.0004:
             cvs.yview_moveto(self._scroll_y)
-            self._scroll_anim = False
-            return
+            self._scroll_anim = False; return
         cvs.yview_moveto(cur + diff*0.18)
         self.after(11, lambda: self._smooth(cvs))
 
     # ── Einstellungen Panel ───────────────────────────────────────────────────
-    def _build_settings_panel(self, panel):
-        # Header
+    def _build_settings(self, panel):
         hdr = tk.Frame(panel, bg=CARD2)
         hdr.pack(fill="x", padx=20, pady=(16,8))
-        tk.Label(hdr, text="⚙️  Einstellungen", font=("Segoe UI Black", 14, "bold"),
-                 bg=CARD2, fg=TEXT).pack(side="left")
-        RoundButton(hdr, "✕  Schließen", self._toggle_settings,
-                    bg_color=CARD, hover_color=RED, fg_color=TEXT2,
-                    width=110, height=30, radius=15,
-                    font=("Segoe UI", 9, "bold")
-                    ).pack(side="right")
+        tk.Label(hdr, text="⚙️  Einstellungen",
+                 font=("Segoe UI Black", 14, "bold"), bg=CARD2, fg=TEXT
+                 ).pack(side="left")
+        btn(hdr, "✕  Schließen", self._toggle_settings,
+            bg=CARD, fg=TEXT2, hbg=RED,
+            font=("Segoe UI", 9, "bold"), padx=12, pady=6
+            ).pack(side="right")
 
-        tk.Frame(panel, bg=ACCENT, height=1).pack(fill="x", padx=0)
+        tk.Frame(panel, bg=ACCENT, height=1).pack(fill="x")
 
         body = tk.Frame(panel, bg=CARD2)
-        body.pack(fill="both", expand=True, padx=20, pady=16)
+        body.pack(fill="both", expand=True, padx=24, pady=20)
 
         # Speicherordner
         tk.Label(body, text="📁  Speicherordner",
-                 font=("Segoe UI", 10, "bold"), bg=CARD2, fg=TEXT2
+                 font=("Segoe UI", 11, "bold"), bg=CARD2, fg=TEXT2
                  ).pack(anchor="w", pady=(0,6))
-        row = tk.Frame(body, bg=CARD2); row.pack(fill="x", pady=(0,18))
+        row = tk.Frame(body, bg=CARD2); row.pack(fill="x", pady=(0,20))
         tk.Label(row, textvariable=self.output_dir,
-                 font=("Segoe UI", 9), bg=CARD, fg=TEXT2,
-                 anchor="w", highlightthickness=1, highlightbackground=BORDER
-                 ).pack(side="left", fill="x", expand=True, ipady=9, ipadx=10)
-        RoundButton(row, "Auswählen", self._browse,
-                    bg_color=ACCENT, hover_color=ACCENT_L,
-                    width=110, height=34, radius=17,
-                    font=("Segoe UI", 9, "bold"), icon="📂"
-                    ).pack(side="left", padx=(10,0))
+                 font=("Segoe UI", 9), bg=CARD, fg=TEXT2, anchor="w",
+                 highlightthickness=1, highlightbackground=BORDER
+                 ).pack(side="left", fill="x", expand=True, ipady=10, ipadx=10)
+        btn(row, "📂  Auswählen", self._browse,
+            bg=ACCENT, fg=TEXT, hbg=ACCENT_L,
+            font=("Segoe UI", 9, "bold"), padx=12, pady=8
+            ).pack(side="left", padx=(10,0))
 
         # Qualität
         tk.Label(body, text="🎚️  Audioqualität",
-                 font=("Segoe UI", 10, "bold"), bg=CARD2, fg=TEXT2
+                 font=("Segoe UI", 11, "bold"), bg=CARD2, fg=TEXT2
                  ).pack(anchor="w", pady=(0,8))
-        qrow = tk.Frame(body, bg=CARD2); qrow.pack(fill="x", pady=(0,18))
+        qrow = tk.Frame(body, bg=CARD2); qrow.pack(fill="x", pady=(0,20))
         for label, val, clr in [
-            ("🔥  320 kbps  (Beste)",  "0", ACCENT_L),
-            ("👍  192 kbps  (Gut)",    "5", TEXT2),
-            ("📉  128 kbps  (Normal)", "9", TEXT3),
+            ("🔥  320 kbps  Beste",  "0", ACCENT_L),
+            ("👍  192 kbps  Gut",    "5", TEXT2),
+            ("📉  128 kbps  Normal", "9", TEXT3),
         ]:
-            f = tk.Frame(qrow, bg=CARD, highlightthickness=1, highlightbackground=BORDER)
-            f.pack(side="left", padx=(0,8), ipady=4, ipadx=8)
+            f = tk.Frame(qrow, bg=CARD, highlightthickness=1,
+                         highlightbackground=BORDER)
+            f.pack(side="left", padx=(0,8))
             tk.Radiobutton(f, text=label, variable=self.quality_var, value=val,
                            bg=CARD, fg=clr, selectcolor=BG,
                            activebackground=CARD, activeforeground=ACCENT_L,
                            font=("Segoe UI", 10), cursor="hand2"
-                           ).pack(padx=6, pady=4)
+                           ).pack(padx=10, pady=8)
 
         # Dateimanager
         tk.Label(body, text="🗂️  Nach Download",
-                 font=("Segoe UI", 10, "bold"), bg=CARD2, fg=TEXT2
+                 font=("Segoe UI", 11, "bold"), bg=CARD2, fg=TEXT2
                  ).pack(anchor="w", pady=(0,8))
         tk.Checkbutton(body,
             text="  Dateimanager öffnen mit Datei markiert",
             variable=self.open_folder, bg=CARD2, fg=TEXT2, selectcolor=BG,
             activebackground=CARD2, activeforeground=ACCENT_L,
-            font=("Segoe UI", 10), cursor="hand2").pack(anchor="w")
+            font=("Segoe UI", 10), cursor="hand2"
+            ).pack(anchor="w")
 
     def _toggle_settings(self):
         self._settings_open = not self._settings_open
         if self._settings_open:
-            # Panel über dem Hauptinhalt platzieren
-            self._settings_panel.place(x=0, y=0, relwidth=1.0, relheight=1.0)
-            self._settings_panel.lift()
+            self._spanel.place(x=0, y=0, relwidth=1.0, relheight=1.0)
+            self._spanel.lift()
         else:
-            self._settings_panel.place_forget()
+            self._spanel.place_forget()
 
-    # ── Haupt-Inhalt ─────────────────────────────────────────────────────────
+    # ── Hauptinhalt ──────────────────────────────────────────────────────────
     def _build_content(self, p):
         # Header
         hdr = tk.Frame(p, bg=BG); hdr.pack(fill="x", padx=28, pady=(28,0))
@@ -337,25 +263,24 @@ class App(tk.Tk):
         tk.Label(left, text="🎵", font=("Segoe UI", 30), bg=BG, fg=ACCENT
                  ).pack(side="left")
         nf = tk.Frame(left, bg=BG); nf.pack(side="left", padx=(10,0))
-        tk.Label(nf, text=APP_NAME, font=("Segoe UI Black", 24, "bold"),
-                 bg=BG, fg=TEXT).pack(anchor="w")
-        tk.Label(nf, text=APP_SUB, font=("Segoe UI", 9),
-                 bg=BG, fg=TEXT3).pack(anchor="w")
+        tk.Label(nf, text=APP_NAME,
+                 font=("Segoe UI Black", 24, "bold"), bg=BG, fg=TEXT
+                 ).pack(anchor="w")
+        tk.Label(nf, text=APP_SUB,
+                 font=("Segoe UI", 9), bg=BG, fg=TEXT3).pack(anchor="w")
 
         # Buttons oben rechts
-        right = tk.Frame(hdr, bg=BG); right.pack(side="right", anchor="n")
-        RoundButton(right, "Update", self._check_update,
-                    bg_color=CARD2, hover_color=ACCENT, fg_color=TEXT2,
-                    width=95, height=32, radius=16,
-                    font=("Segoe UI", 9, "bold"), icon="🔄"
-                    ).pack(side="left", padx=(0,8))
-        RoundButton(right, "⚙️", self._toggle_settings,
-                    bg_color=CARD2, hover_color=ACCENT, fg_color=TEXT,
-                    width=40, height=32, radius=16,
-                    font=("Segoe UI", 12)
-                    ).pack(side="left")
+        right = tk.Frame(hdr, bg=BG); right.pack(side="right", anchor="n", pady=4)
+        btn(right, "🔄  Update", self._check_update,
+            bg=CARD2, fg=TEXT2, hbg=ACCENT,
+            font=("Segoe UI", 9, "bold"), padx=12, pady=6
+            ).pack(side="left", padx=(0,8))
+        btn(right, "⚙️", self._toggle_settings,
+            bg=CARD2, fg=TEXT, hbg=ACCENT,
+            font=("Segoe UI", 13), padx=10, pady=5
+            ).pack(side="left")
         tk.Label(right, text=f"v{VERSION}", font=("Segoe UI", 8),
-                 bg=BG, fg=TEXT3).pack(pady=(4,0))
+                 bg=BG, fg=TEXT3).pack(side="left", padx=(8,0), pady=(6,0))
 
         tk.Label(p, text="  YouTube · SoundCloud · Spotify · Songname  ",
                  font=("Segoe UI", 9), bg=CARD2, fg=TEXT2
@@ -366,14 +291,11 @@ class App(tk.Tk):
         self._section_spotify(p)
 
         # Download Button
-        dl_outer = tk.Frame(p, bg=BG); dl_outer.pack(fill="x", padx=28, pady=(8,10))
-        self.dl_btn = RoundButton(dl_outer, "MP3 herunterladen", self._start_download,
-                                  bg_color=ACCENT, hover_color=ACCENT_L,
-                                  width=400, height=48, radius=24,
-                                  font=("Segoe UI Black", 12), icon="⬇")
-        self.dl_btn.pack(fill="x", expand=True)
-        dl_outer.bind("<Configure>",
-            lambda e: self.dl_btn.configure(width=max(100, e.width)))
+        dl_outer = tk.Frame(p, bg=BG); dl_outer.pack(fill="x", padx=28, pady=(10,10))
+        self.dl_btn = btn(dl_outer, "⬇   MP3 herunterladen", self._start_download,
+                          bg=ACCENT, fg=TEXT, hbg=ACCENT_L,
+                          font=("Segoe UI Black", 13), padx=0, pady=14)
+        self.dl_btn.pack(fill="x")
 
         # Progressbar
         style = ttk.Style(); style.theme_use("default")
@@ -395,7 +317,8 @@ class App(tk.Tk):
         lf = tk.Frame(p, bg=CARD, highlightthickness=1, highlightbackground=BORDER)
         lf.pack(fill="x", padx=28, pady=(10,28))
         lhdr = tk.Frame(lf, bg=CARD); lhdr.pack(fill="x", padx=12, pady=(8,0))
-        tk.Label(lhdr, text="●", font=("Segoe UI", 8), bg=CARD, fg=GREEN).pack(side="left")
+        tk.Label(lhdr, text="●", font=("Segoe UI", 8), bg=CARD, fg=GREEN
+                 ).pack(side="left")
         tk.Label(lhdr, text="  LOG", font=("Segoe UI", 8, "bold"),
                  bg=CARD, fg=TEXT3).pack(side="left")
         self.log = tk.Text(lf, bg=CARD, fg=TEXT2, font=("Consolas", 9),
@@ -412,45 +335,42 @@ class App(tk.Tk):
         f = self._section(p, "🔗", "YouTube / SoundCloud", "Link einfügen oder Strg+V")
         row = tk.Frame(f, bg=CARD); row.pack(fill="x", padx=14, pady=(0,12))
         GlowEntry(row, self.url_var).pack(side="left", fill="x", expand=True)
-        RoundButton(row, "Einfügen", lambda: self._paste_to(self.url_var),
-                    bg_color=CARD2, hover_color=ACCENT, fg_color=TEXT2,
-                    width=95, height=36, radius=18,
-                    font=("Segoe UI", 9, "bold"), icon="📋"
-                    ).pack(side="left", padx=(8,0))
+        btn(row, "📋 Einfügen", lambda: self._paste_to(self.url_var),
+            bg=CARD2, fg=TEXT2, hbg=ACCENT,
+            font=("Segoe UI", 9), padx=12, pady=8
+            ).pack(side="left", padx=(8,0))
 
     def _section_search(self, p):
         f = self._section(p, "🔍", "Song suchen", "Name + Künstler → direkt laden")
         row = tk.Frame(f, bg=CARD); row.pack(fill="x", padx=14, pady=(0,6))
-        tk.Label(row, text="Song", font=("Segoe UI", 9), bg=CARD,
-                 fg=TEXT3, width=7, anchor="w").pack(side="left")
+        tk.Label(row, text="Song", font=("Segoe UI", 9),
+                 bg=CARD, fg=TEXT3, width=7, anchor="w").pack(side="left")
         self.search_var = tk.StringVar()
         GlowEntry(row, self.search_var).pack(side="left", fill="x", expand=True)
         row2 = tk.Frame(f, bg=CARD); row2.pack(fill="x", padx=14, pady=(6,12))
-        tk.Label(row2, text="Künstler", font=("Segoe UI", 9), bg=CARD,
-                 fg=TEXT3, width=7, anchor="w").pack(side="left")
+        tk.Label(row2, text="Künstler", font=("Segoe UI", 9),
+                 bg=CARD, fg=TEXT3, width=7, anchor="w").pack(side="left")
         self.artist_var = tk.StringVar()
         GlowEntry(row2, self.artist_var).pack(side="left", fill="x", expand=True)
-        RoundButton(row2, "Suchen & laden", self._search_by_name,
-                    bg_color=ACCENT, hover_color=ACCENT_L,
-                    width=145, height=36, radius=18,
-                    font=("Segoe UI", 9, "bold"), icon="🔍"
-                    ).pack(side="left", padx=(10,0))
+        btn(row2, "🔍 Suchen & laden", self._search_by_name,
+            bg=ACCENT, fg=TEXT, hbg=ACCENT_L,
+            font=("Segoe UI", 9, "bold"), padx=12, pady=8
+            ).pack(side="left", padx=(10,0))
 
     def _section_spotify(self, p):
         f = self._section(p, "🟢", "Spotify", "Link einfügen → findet Song auf YouTube")
         row = tk.Frame(f, bg=CARD); row.pack(fill="x", padx=14, pady=(0,12))
         self.spotify_var = tk.StringVar()
-        GlowEntry(row, self.spotify_var, accent=SPOTIFY).pack(side="left", fill="x", expand=True)
-        RoundButton(row, "Einfügen", lambda: self._paste_to(self.spotify_var),
-                    bg_color=CARD2, hover_color=SPOTIFY, fg_color=TEXT2,
-                    width=95, height=36, radius=18,
-                    font=("Segoe UI", 9, "bold"), icon="📋"
-                    ).pack(side="left", padx=(8,0))
-        RoundButton(row, "Laden", self._spotify_to_yt,
-                    bg_color=SPOTIFY, hover_color=SPOTIFY_L,
-                    width=85, height=36, radius=18,
-                    font=("Segoe UI", 9, "bold"), icon="🎵"
-                    ).pack(side="left", padx=(8,0))
+        GlowEntry(row, self.spotify_var, accent=SPOTIFY
+                  ).pack(side="left", fill="x", expand=True)
+        btn(row, "📋 Einfügen", lambda: self._paste_to(self.spotify_var),
+            bg=CARD2, fg=TEXT2, hbg=SPOTIFY,
+            font=("Segoe UI", 9), padx=12, pady=8
+            ).pack(side="left", padx=(8,0))
+        btn(row, "🎵 Laden", self._spotify_to_yt,
+            bg=SPOTIFY, fg=TEXT, hbg=SPOTIFY_L,
+            font=("Segoe UI", 9, "bold"), padx=12, pady=8
+            ).pack(side="left", padx=(8,0))
 
     def _section(self, parent, icon, title, subtitle):
         outer = tk.Frame(parent, bg=CARD,
@@ -491,7 +411,9 @@ class App(tk.Tk):
         except: pass
 
     def _set_busy(self, busy):
-        self.dl_btn.configure_state(not busy)
+        state = "disabled" if busy else "normal"
+        self.dl_btn.configure(state=state,
+            text="⏳  Lädt..." if busy else "⬇   MP3 herunterladen")
         if busy: self.prog.configure(mode="indeterminate"); self.prog.start(12)
         else:    self.prog.stop()
 
