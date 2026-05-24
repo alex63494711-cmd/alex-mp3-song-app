@@ -3,7 +3,7 @@ from tkinter import filedialog, messagebox, ttk
 import threading, subprocess, os, sys, re, shutil, zipfile
 import urllib.request, urllib.parse
 
-VERSION    = "3.0"
+VERSION    = "3.1"
 APP_NAME   = "WaveLoad"
 GITHUB_RAW = "https://raw.githubusercontent.com/alex63494711-cmd/alex-mp3-song-app/refs/heads/main/mp3downloader.py"
 GITHUB_EXE = "https://github.com/alex63494711-cmd/alex-mp3-song-app/releases/latest/download/WaveLoad.exe"
@@ -244,39 +244,55 @@ class App(tk.Tk):
         self._spanel.lift()
         self._anim_open(0)
 
-    def _anim_open(self, step):
-        steps = 12
-        if step > steps:
+    @staticmethod
+    def _ease_out_back(t):
+        # Bounce leicht über Ziel hinaus dann zurück
+        c1 = 1.70158
+        c3 = c1 + 1
+        return 1 + c3 * ((t - 1) ** 3) + c1 * ((t - 1) ** 2)
+
+    @staticmethod
+    def _ease_in_back(t):
+        c1 = 1.70158
+        c3 = c1 + 1
+        return c3 * t * t * t - c1 * t * t
+
+    def _anim_open(self, frame):
+        total  = 30          # ~500ms bei 16ms pro Frame
+        pw, ph = 500, 400
+        if frame > total:
             self._panel_anim = False
-            self._spanel.place(relx=0.5, rely=0.5, anchor="center", width=500, height=400)
+            self._spanel.place(relx=0.5, rely=0.5, anchor="center",
+                               width=pw, height=ph)
             return
         self._panel_anim = True
-        t = step / steps
-        t2 = 1 - (1 - t) ** 3
-        w = max(10, int(500 * t2))
-        h = max(10, int(400 * t2))
+        t  = frame / total
+        e  = self._ease_out_back(t)
+        w  = max(2, int(pw * e))
+        h  = max(2, int(ph * e))
         self._spanel.place(relx=0.5, rely=0.5, anchor="center", width=w, height=h)
-        self.after(14, lambda: self._anim_open(step + 1))
+        self.after(16, lambda: self._anim_open(frame + 1))
 
     def _close_settings(self):
         if self._panel_anim: return
-        self._anim_close(10)
+        self._anim_close(0)
 
-    def _anim_close(self, step):
-        steps = 10
-        if step < 0:
-            self._panel_anim = False
+    def _anim_close(self, frame):
+        total  = 20          # ~330ms – schneller schließen
+        pw, ph = 500, 400
+        if frame > total:
+            self._panel_anim  = False
             self._panel_visible = False
             self._spanel.place_forget()
             return
         self._panel_anim = True
-        t = step / steps
-        t2 = 1 - (1-t)**3
-        pw, ph = 500, 400
-        w = max(10, int(pw * t2))
-        h = max(10, int(ph * t2))
+        t  = frame / total
+        e  = self._ease_in_back(t)          # zieht sich kurz auf, dann weg
+        e  = max(0.0, 1.0 - e)              # von 1 → 0
+        w  = max(2, int(pw * e))
+        h  = max(2, int(ph * e))
         self._spanel.place(relx=0.5, rely=0.5, anchor="center", width=w, height=h)
-        self.after(16, lambda: self._anim_close(step-1))
+        self.after(16, lambda: self._anim_close(frame + 1))
 
     # ── Haupt-Inhalt ─────────────────────────────────────────────────────────
     def _build_main(self, p):
