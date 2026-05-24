@@ -3,7 +3,7 @@ from tkinter import filedialog, messagebox, ttk
 import threading, subprocess, os, sys, re, shutil, zipfile
 import urllib.request, urllib.parse
 
-VERSION    = "2.7"
+VERSION    = "2.8"
 APP_NAME   = "WaveLoad"
 GITHUB_RAW = "https://raw.githubusercontent.com/alex63494711-cmd/alex-mp3-song-app/refs/heads/main/mp3downloader.py"
 GITHUB_EXE = "https://github.com/alex63494711-cmd/alex-mp3-song-app/releases/latest/download/WaveLoad.exe"
@@ -169,7 +169,7 @@ class App(tk.Tk):
                                  highlightthickness=1, highlightbackground=ACCENT)
         self._build_settings(self._spanel)
         # Overlay abgedunkelter Hintergrund
-        self._overlay.configure(bg="#00000088")
+        self._overlay.configure(bg="#111111")
 
     def _smooth(self):
         self._sa = True
