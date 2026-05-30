@@ -489,7 +489,7 @@ class App(tk.Tk):
         finally:
             self._busy(False)
 
-
+    def _sec(self, p, title, sub):
         outer = tk.Frame(p, bg=CARD,
                          highlightthickness=1, highlightbackground=BORDER)
         outer.pack(fill="x", padx=28, pady=(0,10))
