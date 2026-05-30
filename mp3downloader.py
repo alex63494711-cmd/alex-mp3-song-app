@@ -3,7 +3,7 @@ from tkinter import filedialog, messagebox, ttk
 import threading, subprocess, os, sys, re, shutil, zipfile
 import urllib.request, urllib.parse
 
-VERSION    = "3.5"
+VERSION    = "4.0"
 APP_NAME   = "WaveLoad"
 GITHUB_RAW = "https://raw.githubusercontent.com/alex63494711-cmd/alex-mp3-song-app/refs/heads/main/mp3downloader.py"
 GITHUB_EXE = "https://github.com/alex63494711-cmd/alex-mp3-song-app/releases/latest/download/WaveLoad.exe"
@@ -16,19 +16,24 @@ FFMPEG_PATH = os.path.join(TOOLS_DIR, "ffmpeg.exe")
 YTDLP_URL   = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe"
 FFMPEG_URL  = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip"
 
-BG       = "#08080f"
-CARD     = "#12121e"
-CARD2    = "#1a1a2e"
-BORDER   = "#2a2a4a"
+BG       = "#0a0a14"
+CARD     = "#111120"
+CARD2    = "#181830"
+CARD3    = "#1e1e38"
+BORDER   = "#2a2a50"
 ACCENT   = "#8b5cf6"
 ACCENT_L = "#a78bfa"
 ACCENT_D = "#6d28d9"
+ACCENT_G = "#7c3aed"
 GREEN    = "#10b981"
 GREEN_L  = "#34d399"
+GREEN_BG = "#0a2018"
 SPOTIFY  = "#1db954"
-TEXT     = "#f1f0ff"
-TEXT2    = "#a0a0c0"
-TEXT3    = "#5a5a8a"
+TIKTOK   = "#69C9D0"
+INSTA    = "#E1306C"
+TEXT     = "#f0efff"
+TEXT2    = "#9090b8"
+TEXT3    = "#505070"
 RED      = "#f87171"
 CREATE_NO_WINDOW = 0x08000000
 
@@ -38,7 +43,7 @@ def get_icon_path():
     return None
 
 def mk_btn(parent, text, cmd, bg=ACCENT, fg=TEXT, hover=ACCENT_L,
-           font=("Segoe UI", 10, "bold"), px=16, py=7):
+           font=("Segoe UI", 10, "bold"), px=16, py=8, radius=6):
     b = tk.Button(parent, text=text, command=cmd, bg=bg, fg=fg,
                   activebackground=hover, activeforeground=fg,
                   font=font, relief="flat", bd=0, cursor="hand2",
@@ -48,26 +53,36 @@ def mk_btn(parent, text, cmd, bg=ACCENT, fg=TEXT, hover=ACCENT_L,
     return b
 
 class GlowEntry(tk.Frame):
-    def __init__(self, parent, var, accent=ACCENT):
+    def __init__(self, parent, var, accent=ACCENT, placeholder=""):
         super().__init__(parent, bg=parent["bg"])
+        self._accent = accent
+        self._placeholder = placeholder
+        self._has_focus = False
         self._b = tk.Frame(self, bg=BORDER, padx=1, pady=1)
         self._b.pack(fill="x", expand=True)
-        self._e = tk.Entry(self._b, textvariable=var, font=("Segoe UI", 10),
-                           bg=CARD2, fg=TEXT, insertbackground=TEXT,
+        inner = tk.Frame(self._b, bg=CARD3)
+        inner.pack(fill="x")
+        self._e = tk.Entry(inner, textvariable=var, font=("Segoe UI", 10),
+                           bg=CARD3, fg=TEXT, insertbackground=accent,
                            relief="flat", bd=0)
-        self._e.pack(fill="x", ipady=9, ipadx=10)
-        self._e.bind("<FocusIn>",  lambda e: self._b.configure(bg=accent))
-        self._e.bind("<FocusOut>", lambda e: self._b.configure(bg=BORDER))
+        self._e.pack(fill="x", ipady=10, ipadx=12)
+        self._e.bind("<FocusIn>",  self._on_focus)
+        self._e.bind("<FocusOut>", self._on_blur)
+
+    def _on_focus(self, e=None):
+        self._b.configure(bg=self._accent)
+
+    def _on_blur(self, e=None):
+        self._b.configure(bg=BORDER)
 
 class App(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title(APP_NAME)
-        self.minsize(620, 520)
-        self.geometry("700x760")
+        self.minsize(640, 560)
+        self.geometry("720x800")
         self.resizable(True, True)
         self.configure(bg=BG)
-        # Outer wrapper auch BG damit Panel-Hintergrund stimmt
         self.update_idletasks()
         self.output_dir  = tk.StringVar(value=os.path.join(os.path.expanduser("~"), "Music"))
         self.quality_var = tk.StringVar(value="0")
@@ -78,9 +93,8 @@ class App(tk.Tk):
         self._sa = False
         self._dy0 = None
         self._dv0 = None
-        self._panel_anim = False
+        self._panel_anim    = False
         self._panel_visible = False
-        self._panel_alpha = 0.0   # 0.0 = geschlossen, 1.0 = offen
         self._build_ui()
         self.after(100, self._set_icon)
         self.after(400, self._check_tools)
@@ -134,8 +148,7 @@ class App(tk.Tk):
             self._sbc.configure(width=0 if (f <= 0.0 and l >= 1.0) else 9)
 
         def _sb_press(e):
-            self._dy0 = e.y
-            self._dv0 = self._cvs.yview()[0]
+            self._dy0 = e.y; self._dv0 = self._cvs.yview()[0]
         def _sb_drag(e):
             if self._dy0 is None: return
             h = self._sbc.winfo_height()
@@ -168,8 +181,6 @@ class App(tk.Tk):
 
         self._build_main(self.inner)
 
-        # Settings panel direkt auf Root (kein Canvas-Scroll-Problem)
-        # bg=BG damit kein schwarzer Rand sichtbar ist
         self._spanel = tk.Frame(self, bg=CARD2,
                                 highlightthickness=1, highlightbackground=ACCENT)
         self._build_settings(self._spanel)
@@ -183,65 +194,62 @@ class App(tk.Tk):
         self._cvs.yview_moveto(cur + diff * 0.18)
         self.after(11, self._smooth)
 
-    # ── Settings Panel Animation ──────────────────────────────────────────────
+    # ── Settings Panel ────────────────────────────────────────────────────────
     def _build_settings(self, p):
-        # Header
         hdr = tk.Frame(p, bg=CARD2)
-        hdr.pack(fill="x", padx=20, pady=(18, 10))
-        tk.Label(hdr, text="Einstellungen",
-                 font=("Segoe UI Black", 15), bg=CARD2, fg=TEXT).pack(side="left")
+        hdr.pack(fill="x", padx=24, pady=(20, 10))
+        tk.Label(hdr, text="⚙  Einstellungen",
+                 font=("Segoe UI Black", 14), bg=CARD2, fg=TEXT).pack(side="left")
         mk_btn(hdr, "✕", self._close_settings,
-               bg=CARD, fg=TEXT2, hover=RED,
+               bg=CARD3, fg=TEXT2, hover=RED,
                font=("Segoe UI", 11, "bold"), px=10, py=4
                ).pack(side="right")
-
-        tk.Frame(p, bg=ACCENT, height=1).pack(fill="x", padx=0, pady=(0,4))
+        tk.Frame(p, bg=ACCENT, height=1).pack(fill="x")
 
         body = tk.Frame(p, bg=CARD2)
-        body.pack(fill="both", expand=True, padx=20, pady=(8,20))
+        body.pack(fill="both", expand=True, padx=24, pady=(16,24))
 
         # Ordner
-        tk.Label(body, text="Speicherordner",
-                 font=("Segoe UI", 10, "bold"), bg=CARD2, fg=TEXT2
-                 ).pack(anchor="w", pady=(0,6))
-        fr = tk.Frame(body, bg=CARD2); fr.pack(fill="x", pady=(0,18))
+        self._settings_label(body, "📁  Speicherordner")
+        fr = tk.Frame(body, bg=CARD2); fr.pack(fill="x", pady=(6,18))
         tk.Label(fr, textvariable=self.output_dir,
-                 font=("Segoe UI", 9), bg=CARD, fg=TEXT2, anchor="w",
+                 font=("Segoe UI", 9), bg=CARD3, fg=TEXT2, anchor="w",
                  highlightthickness=1, highlightbackground=BORDER
-                 ).pack(side="left", fill="x", expand=True, ipady=9, ipadx=10)
+                 ).pack(side="left", fill="x", expand=True, ipady=10, ipadx=12)
         mk_btn(fr, "Auswählen", self._browse,
-               font=("Segoe UI", 9, "bold"), px=12, py=7
+               font=("Segoe UI", 9, "bold"), px=12, py=8
                ).pack(side="left", padx=(10,0))
 
         # Qualität
-        tk.Label(body, text="Audioqualität",
-                 font=("Segoe UI", 10, "bold"), bg=CARD2, fg=TEXT2
-                 ).pack(anchor="w", pady=(0,8))
-        qr = tk.Frame(body, bg=CARD2); qr.pack(fill="x", pady=(0,18))
+        self._settings_label(body, "🎚  Audioqualität")
+        qr = tk.Frame(body, bg=CARD2); qr.pack(fill="x", pady=(6,18))
         for lbl, val, clr in [
-            ("320 kbps  Beste", "0", ACCENT_L),
-            ("192 kbps  Gut",   "5", TEXT2),
-            ("128 kbps  Normal","9", TEXT3),
+            ("320 kbps\nBeste", "0", ACCENT_L),
+            ("192 kbps\nGut",   "5", TEXT2),
+            ("128 kbps\nNormal","9", TEXT3),
         ]:
-            f = tk.Frame(qr, bg=CARD, highlightthickness=1, highlightbackground=BORDER)
-            f.pack(side="left", padx=(0,8))
+            f = tk.Frame(qr, bg=CARD3, highlightthickness=1, highlightbackground=BORDER)
+            f.pack(side="left", padx=(0,10))
             tk.Radiobutton(f, text=lbl, variable=self.quality_var, value=val,
-                           bg=CARD, fg=clr, selectcolor=BG,
-                           activebackground=CARD, activeforeground=ACCENT_L,
-                           font=("Segoe UI", 10), cursor="hand2"
-                           ).pack(padx=10, pady=8)
+                           bg=CARD3, fg=clr, selectcolor=ACCENT_D,
+                           activebackground=CARD3, activeforeground=ACCENT_L,
+                           font=("Segoe UI", 9), cursor="hand2", justify="center"
+                           ).pack(padx=16, pady=10)
 
-        # Dateimanager
-        tk.Label(body, text="Nach Download",
-                 font=("Segoe UI", 10, "bold"), bg=CARD2, fg=TEXT2
-                 ).pack(anchor="w", pady=(0,8))
+        # Nach Download
+        self._settings_label(body, "📥  Nach Download")
         tk.Checkbutton(body,
                        text="  Dateimanager öffnen mit Datei markiert",
                        variable=self.open_folder, bg=CARD2, fg=TEXT2,
-                       selectcolor=BG, activebackground=CARD2,
+                       selectcolor=ACCENT_D, activebackground=CARD2,
                        activeforeground=ACCENT_L,
                        font=("Segoe UI", 10), cursor="hand2"
-                       ).pack(anchor="w")
+                       ).pack(anchor="w", pady=(6,0))
+
+    def _settings_label(self, parent, text):
+        tk.Label(parent, text=text,
+                 font=("Segoe UI", 10, "bold"), bg=CARD2, fg=TEXT
+                 ).pack(anchor="w")
 
     def _open_settings(self):
         if self._panel_anim or self._panel_visible: return
@@ -252,31 +260,24 @@ class App(tk.Tk):
 
     @staticmethod
     def _ease_out_back(t):
-        # Bounce leicht über Ziel hinaus dann zurück
-        c1 = 1.70158
-        c3 = c1 + 1
+        c1 = 1.70158; c3 = c1 + 1
         return 1 + c3 * ((t - 1) ** 3) + c1 * ((t - 1) ** 2)
 
     @staticmethod
     def _ease_in_back(t):
-        c1 = 1.70158
-        c3 = c1 + 1
+        c1 = 1.70158; c3 = c1 + 1
         return c3 * t * t * t - c1 * t * t
 
     def _anim_open(self, frame):
-        total  = 30          # ~500ms bei 16ms pro Frame
-        pw, ph = 500, 400
+        total = 30; pw, ph = 520, 420
         if frame > total:
             self._panel_anim = False
-            self._spanel.place(relx=0.5, rely=0.5, anchor="center",
-                               width=pw, height=ph)
+            self._spanel.place(relx=0.5, rely=0.5, anchor="center", width=pw, height=ph)
             return
         self._panel_anim = True
-        t  = frame / total
-        e  = self._ease_out_back(t)
-        w  = max(2, int(pw * e))
-        h  = max(2, int(ph * e))
-        self._spanel.place(relx=0.5, rely=0.5, anchor="center", width=w, height=h)
+        t = frame / total; e = self._ease_out_back(t)
+        self._spanel.place(relx=0.5, rely=0.5, anchor="center",
+                           width=max(2, int(pw*e)), height=max(2, int(ph*e)))
         self.after(16, lambda: self._anim_open(frame + 1))
 
     def _close_settings(self):
@@ -284,240 +285,216 @@ class App(tk.Tk):
         self._anim_close(0)
 
     def _anim_close(self, frame):
-        total  = 20          # ~330ms – schneller schließen
-        pw, ph = 500, 400
+        total = 20; pw, ph = 520, 420
         if frame > total:
-            self._panel_anim  = False
-            self._panel_visible = False
-            self._spanel.place_forget()
-            return
+            self._panel_anim = False; self._panel_visible = False
+            self._spanel.place_forget(); return
         self._panel_anim = True
-        t  = frame / total
-        e  = self._ease_in_back(t)          # zieht sich kurz auf, dann weg
-        e  = max(0.0, 1.0 - e)              # von 1 → 0
-        w  = max(2, int(pw * e))
-        h  = max(2, int(ph * e))
-        self._spanel.place(relx=0.5, rely=0.5, anchor="center", width=w, height=h)
+        t = frame / total
+        e = max(0.0, 1.0 - self._ease_in_back(t))
+        self._spanel.place(relx=0.5, rely=0.5, anchor="center",
+                           width=max(2, int(pw*e)), height=max(2, int(ph*e)))
         self.after(16, lambda: self._anim_close(frame + 1))
 
-    # ── Haupt-Inhalt ─────────────────────────────────────────────────────────
+    # ── Header ────────────────────────────────────────────────────────────────
     def _build_main(self, p):
-        hdr = tk.Frame(p, bg=BG)
-        hdr.pack(fill="x", padx=28, pady=(28,0))
-        lft = tk.Frame(hdr, bg=BG); lft.pack(side="left")
-        tk.Label(lft, text="🎵", font=("Segoe UI", 28), bg=BG, fg=ACCENT
-                 ).pack(side="left")
-        nf = tk.Frame(lft, bg=BG); nf.pack(side="left", padx=(10,0))
+        # ─ Header Bar
+        hdr = tk.Frame(p, bg=CARD, highlightthickness=0)
+        hdr.pack(fill="x")
+        # Gradient-ähnliche Linie unten
+        tk.Frame(hdr, bg=ACCENT, height=2).pack(side="bottom", fill="x")
+
+        inner_hdr = tk.Frame(hdr, bg=CARD)
+        inner_hdr.pack(fill="x", padx=20, pady=14)
+
+        lft = tk.Frame(inner_hdr, bg=CARD); lft.pack(side="left")
+        # Icon Box
+        icon_box = tk.Frame(lft, bg=ACCENT_D, width=44, height=44)
+        icon_box.pack_propagate(False)
+        icon_box.pack(side="left")
+        tk.Label(icon_box, text="♪", font=("Segoe UI", 20, "bold"),
+                 bg=ACCENT_D, fg=TEXT).pack(expand=True)
+        nf = tk.Frame(lft, bg=CARD); nf.pack(side="left", padx=(12,0))
         tk.Label(nf, text=APP_NAME,
-                 font=("Segoe UI Black", 22, "bold"), bg=BG, fg=TEXT
+                 font=("Segoe UI Black", 20, "bold"), bg=CARD, fg=TEXT
                  ).pack(anchor="w")
         tk.Label(nf, text="MP3 Downloader",
-                 font=("Segoe UI", 9), bg=BG, fg=TEXT3).pack(anchor="w")
+                 font=("Segoe UI", 8), bg=CARD, fg=TEXT3).pack(anchor="w")
 
-        rgt = tk.Frame(hdr, bg=BG); rgt.pack(side="right", anchor="n", pady=4)
-        mk_btn(rgt, "Update", self._check_update,
-               bg=CARD2, fg=TEXT2, hover=ACCENT,
-               font=("Segoe UI", 9, "bold"), px=12, py=6
-               ).pack(side="left", padx=(0,6))
+        rgt = tk.Frame(inner_hdr, bg=CARD); rgt.pack(side="right", anchor="center")
+        mk_btn(rgt, "↑ Update", self._check_update,
+               bg=CARD3, fg=TEXT2, hover=ACCENT,
+               font=("Segoe UI", 9, "bold"), px=12, py=7
+               ).pack(side="left", padx=(0,8))
         mk_btn(rgt, "⚙", self._open_settings,
-               bg=CARD2, fg=TEXT, hover=ACCENT,
-               font=("Segoe UI", 12), px=10, py=5
+               bg=CARD3, fg=TEXT2, hover=ACCENT,
+               font=("Segoe UI", 13), px=11, py=6
                ).pack(side="left")
         tk.Label(rgt, text=f"v{VERSION}", font=("Segoe UI", 8),
-                 bg=BG, fg=TEXT3).pack(pady=(4,0))
+                 bg=CARD, fg=TEXT3).pack(side="left", padx=(8,0))
 
-        tk.Label(p, text="  YouTube · SoundCloud · Spotify · TikTok · Instagram · Songname  ",
-                 font=("Segoe UI", 9), bg=CARD2, fg=TEXT2
-                 ).pack(anchor="w", padx=28, pady=(8,18))
-
+        # ─ Sections
         self._sec_url(p)
         self._sec_search(p)
         self._sec_spotify(p)
         self._sec_tiktok_insta(p)
 
-        df = tk.Frame(p, bg=BG); df.pack(fill="x", padx=28, pady=(10,8))
-        self.dl_btn = mk_btn(df, "  MP3 herunterladen", self._start_dl,
-                             font=("Segoe UI Black", 13), px=20, py=14)
+        # ─ Download Button
+        df = tk.Frame(p, bg=BG); df.pack(fill="x", padx=20, pady=(14,8))
+        self.dl_btn = tk.Button(df, text="  ↓  MP3 herunterladen",
+                                command=self._start_dl,
+                                bg=ACCENT, fg=TEXT,
+                                activebackground=ACCENT_L, activeforeground=TEXT,
+                                font=("Segoe UI Black", 13), relief="flat", bd=0,
+                                cursor="hand2", padx=20, pady=16)
         self.dl_btn.pack(fill="x")
+        self.dl_btn.bind("<Enter>", lambda e: self.dl_btn.configure(bg=ACCENT_L))
+        self.dl_btn.bind("<Leave>", lambda e: self.dl_btn.configure(bg=ACCENT))
 
-        self.prog = ttk.Progressbar(p, mode="indeterminate")
-        self.prog.pack(fill="x", padx=28, pady=(0,4))
+        # ─ Progress
+        style = ttk.Style()
+        style.theme_use("default")
+        style.configure("Wave.Horizontal.TProgressbar",
+                        troughcolor=CARD2, background=ACCENT,
+                        darkcolor=ACCENT, lightcolor=ACCENT_L,
+                        bordercolor=CARD2, thickness=4)
+        self.prog = ttk.Progressbar(p, mode="indeterminate",
+                                    style="Wave.Horizontal.TProgressbar")
+        self.prog.pack(fill="x", padx=20, pady=(0,6))
 
-        self.ok_frame = tk.Frame(p, bg="#0d2818",
+        # ─ OK Banner
+        self.ok_frame = tk.Frame(p, bg=GREEN_BG,
                                  highlightthickness=1, highlightbackground=GREEN)
-        tk.Label(self.ok_frame, text="Download fertig!",
-                 font=("Segoe UI Black", 14, "bold"),
-                 bg="#0d2818", fg=GREEN_L).pack(pady=(12,2))
-        self.ok_path = tk.Label(self.ok_frame, text="",
-                                font=("Segoe UI", 9), bg="#0d2818", fg=GREEN)
-        self.ok_path.pack(pady=(0,12))
+        ok_inner = tk.Frame(self.ok_frame, bg=GREEN_BG)
+        ok_inner.pack(pady=14, padx=20, fill="x")
+        tk.Label(ok_inner, text="✓", font=("Segoe UI Black", 18),
+                 bg=GREEN_BG, fg=GREEN_L).pack(side="left")
+        ok_txt = tk.Frame(ok_inner, bg=GREEN_BG); ok_txt.pack(side="left", padx=(12,0))
+        tk.Label(ok_txt, text="Download abgeschlossen!",
+                 font=("Segoe UI Black", 11), bg=GREEN_BG, fg=GREEN_L).pack(anchor="w")
+        self.ok_path = tk.Label(ok_txt, text="",
+                                font=("Segoe UI", 9), bg=GREEN_BG, fg=GREEN)
+        self.ok_path.pack(anchor="w")
 
+        # ─ Log
         lf = tk.Frame(p, bg=CARD, highlightthickness=1, highlightbackground=BORDER)
-        lf.pack(fill="x", padx=28, pady=(6,28))
-        lh = tk.Frame(lf, bg=CARD); lh.pack(fill="x", padx=12, pady=(8,0))
+        lf.pack(fill="x", padx=20, pady=(4,24))
+        lh = tk.Frame(lf, bg=CARD); lh.pack(fill="x", padx=14, pady=(10,0))
         tk.Label(lh, text="●", font=("Segoe UI", 8), bg=CARD, fg=GREEN
                  ).pack(side="left")
         tk.Label(lh, text="  LOG", font=("Segoe UI", 8, "bold"),
                  bg=CARD, fg=TEXT3).pack(side="left")
+        mk_btn(lh, "leeren", lambda: (
+            self.log.configure(state="normal"),
+            self.log.delete("1.0", "end"),
+            self.log.configure(state="disabled")
+        ), bg=CARD, fg=TEXT3, hover=CARD3,
+           font=("Segoe UI", 8), px=8, py=2
+        ).pack(side="right")
         self.log = tk.Text(lf, bg=CARD, fg=TEXT2, font=("Consolas", 9),
                            relief="flat", bd=0, height=6,
                            insertbackground=ACCENT, wrap="word", state="disabled")
-        self.log.pack(fill="x", padx=12, pady=(4,10))
+        self.log.pack(fill="x", padx=14, pady=(4,12))
         self.log.tag_configure("green",  foreground=GREEN_L)
         self.log.tag_configure("red",    foreground=RED)
         self.log.tag_configure("accent", foreground=ACCENT_L)
         self.log.tag_configure("normal", foreground=TEXT2)
 
-    # ── Sections ─────────────────────────────────────────────────────────────
+    # ── Tab Bar ───────────────────────────────────────────────────────────────
+    def _tab_bar(self, p):
+        bar = tk.Frame(p, bg=CARD2)
+        bar.pack(fill="x")
+        tk.Frame(bar, bg=BORDER, height=1).pack(side="bottom", fill="x")
+        tabs = [
+            ("▶  YouTube",   "#FF0000"),
+            ("☁  SoundCloud","#FF5500"),
+            ("♫  Spotify",   SPOTIFY),
+            ("✦  TikTok",    TIKTOK),
+            ("◈  Instagram", INSTA),
+            ("⊕  Songname",  ACCENT_L),
+        ]
+        tf = tk.Frame(bar, bg=CARD2); tf.pack(padx=16, pady=0)
+        for name, color in tabs:
+            lbl = tk.Label(tf, text=name,
+                           font=("Segoe UI", 9, "bold"),
+                           bg=CARD2, fg=TEXT3,
+                           padx=12, pady=10, cursor="hand2")
+            lbl.pack(side="left")
+            lbl.bind("<Enter>", lambda e, l=lbl, c=color: l.configure(fg=c))
+            lbl.bind("<Leave>", lambda e, l=lbl: l.configure(fg=TEXT3))
+
+    # ── Sections ──────────────────────────────────────────────────────────────
     def _sec_url(self, p):
-        f = self._sec(p, "YouTube / SoundCloud", "Link einfügen oder Strg+V")
-        r = tk.Frame(f, bg=CARD); r.pack(fill="x", padx=14, pady=(0,12))
+        f = self._sec(p, "🔗", "YouTube / SoundCloud", "Link einfügen oder Strg+V", ACCENT)
+        r = tk.Frame(f, bg=CARD); r.pack(fill="x", padx=16, pady=(0,14))
         GlowEntry(r, self.url_var).pack(side="left", fill="x", expand=True)
         mk_btn(r, "Einfügen", lambda: self._paste(self.url_var),
-               bg=CARD2, fg=TEXT2, hover=ACCENT,
-               font=("Segoe UI", 9, "bold"), px=12, py=8
+               bg=CARD3, fg=TEXT2, hover=ACCENT,
+               font=("Segoe UI", 9, "bold"), px=12, py=9
                ).pack(side="left", padx=(8,0))
 
     def _sec_search(self, p):
-        f = self._sec(p, "Song suchen", "Name + Künstler direkt laden")
-        r1 = tk.Frame(f, bg=CARD); r1.pack(fill="x", padx=14, pady=(0,6))
-        tk.Label(r1, text="Song", font=("Segoe UI", 9), bg=CARD,
-                 fg=TEXT3, width=7, anchor="w").pack(side="left")
+        f = self._sec(p, "🔍", "Song suchen", "Name + Künstler direkt laden", ACCENT_L)
+        r1 = tk.Frame(f, bg=CARD); r1.pack(fill="x", padx=16, pady=(0,6))
+        tk.Label(r1, text="Song", font=("Segoe UI", 9),
+                 bg=CARD, fg=TEXT3, width=7, anchor="w").pack(side="left")
         self.search_var = tk.StringVar()
         GlowEntry(r1, self.search_var).pack(side="left", fill="x", expand=True)
-        r2 = tk.Frame(f, bg=CARD); r2.pack(fill="x", padx=14, pady=(4,12))
-        tk.Label(r2, text="Künstler", font=("Segoe UI", 9), bg=CARD,
-                 fg=TEXT3, width=7, anchor="w").pack(side="left")
+        r2 = tk.Frame(f, bg=CARD); r2.pack(fill="x", padx=16, pady=(4,14))
+        tk.Label(r2, text="Künstler", font=("Segoe UI", 9),
+                 bg=CARD, fg=TEXT3, width=7, anchor="w").pack(side="left")
         self.artist_var = tk.StringVar()
         GlowEntry(r2, self.artist_var).pack(side="left", fill="x", expand=True)
         mk_btn(r2, "Suchen & laden", self._search_btn,
-               font=("Segoe UI", 9, "bold"), px=12, py=8
+               font=("Segoe UI", 9, "bold"), px=12, py=9
                ).pack(side="left", padx=(10,0))
 
     def _sec_spotify(self, p):
-        f = self._sec(p, "Spotify", "Link einfügen, Song wird auf YouTube gesucht")
-        r = tk.Frame(f, bg=CARD); r.pack(fill="x", padx=14, pady=(0,12))
+        f = self._sec(p, "♫", "Spotify", "Link einfügen → YouTube-Suche", SPOTIFY)
+        r = tk.Frame(f, bg=CARD); r.pack(fill="x", padx=16, pady=(0,14))
         self.sp_var = tk.StringVar()
         GlowEntry(r, self.sp_var, accent=SPOTIFY).pack(side="left", fill="x", expand=True)
         mk_btn(r, "Einfügen", lambda: self._paste(self.sp_var),
-               bg=CARD2, fg=TEXT2, hover=SPOTIFY,
-               font=("Segoe UI", 9), px=10, py=8
+               bg=CARD3, fg=TEXT2, hover=SPOTIFY,
+               font=("Segoe UI", 9), px=10, py=9
                ).pack(side="left", padx=(8,0))
         mk_btn(r, "Laden", self._do_spotify_btn,
-               bg=SPOTIFY, fg=TEXT, hover="#17a349",
-               font=("Segoe UI", 9, "bold"), px=12, py=8
+               bg=SPOTIFY, fg="#000", hover="#17a349",
+               font=("Segoe UI", 9, "bold"), px=14, py=9
                ).pack(side="left", padx=(8,0))
 
     def _sec_tiktok_insta(self, p):
-        TIKTOK  = "#69C9D0"
-        INSTA   = "#E1306C"
-        f = self._sec(p, "TikTok / Instagram", "Sound oder Video herunterladen")
-        r = tk.Frame(f, bg=CARD); r.pack(fill="x", padx=14, pady=(0,8))
+        f = self._sec(p, "✦", "TikTok / Instagram", "Sound als MP3 herunterladen", TIKTOK)
+        r = tk.Frame(f, bg=CARD); r.pack(fill="x", padx=16, pady=(0,14))
         self.ti_var = tk.StringVar()
         GlowEntry(r, self.ti_var, accent=TIKTOK).pack(side="left", fill="x", expand=True)
         mk_btn(r, "Einfügen", lambda: self._paste(self.ti_var),
-               bg=CARD2, fg=TEXT2, hover=TIKTOK,
-               font=("Segoe UI", 9, "bold"), px=12, py=8
+               bg=CARD3, fg=TEXT2, hover=TIKTOK,
+               font=("Segoe UI", 9, "bold"), px=12, py=9
+               ).pack(side="left", padx=(8,0))
+        mk_btn(r, "Laden", self._ti_dl,
+               bg=TIKTOK, fg="#000", hover="#4fbcc4",
+               font=("Segoe UI", 9, "bold"), px=14, py=9
                ).pack(side="left", padx=(8,0))
 
-        br = tk.Frame(f, bg=CARD); br.pack(fill="x", padx=14, pady=(0,12))
-        mk_btn(br, "  Laden (MP3)", lambda: self._ti_dl(),
-               bg=TIKTOK, fg="#000000", hover="#4fbcc4",
-               font=("Segoe UI", 9, "bold"), px=14, py=8
-               ).pack(side="left")
-
-    def _ti_dl(self):
-        url = self.ti_var.get().strip()
-        if not url:
-            messagebox.showwarning("Kein Link", "Bitte TikTok- oder Instagram-Link einfügen!")
-            return
-        if not os.path.exists(YTDLP_PATH):
-            messagebox.showerror("Tools fehlen", "Kurz warten – Tools werden installiert.")
-            return
-        threading.Thread(target=self._ti_thread, args=(url,), daemon=True).start()
-
-    def _ti_thread(self, url):
-        self._busy(True); self._hide_ok(); self.last_file = None
-        # URL bereinigen – Query-Parameter entfernen
-        url = url.split("?")[0].strip()
-        platform = "TikTok" if "tiktok.com" in url else "Instagram"
-        self._log(f"{platform} Sound wird geladen...", "accent")
-        out = os.path.join(self.output_dir.get(), "%(title).80s.%(ext)s")
-        cmd = [YTDLP_PATH,
-               "-x", "--audio-format", "mp3",
-               "--audio-quality", self.quality_var.get(),
-               "--ffmpeg-location", TOOLS_DIR,
-               "--no-playlist",
-               "--no-check-certificate",
-               "--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-               "-o", out,
-               "--print", "after_move:filepath",
-               url]
-        try:
-            proc = subprocess.Popen(cmd, stdout=subprocess.PIPE,
-                                    stderr=subprocess.STDOUT, text=True,
-                                    encoding="utf-8", errors="replace",
-                                    creationflags=CREATE_NO_WINDOW)
-            for line in proc.stdout:
-                line = line.rstrip()
-                if not line: continue
-                if os.path.sep in line and line.endswith(".mp3"):
-                    self.last_file = line.strip()
-                else:
-                    self._log(line)
-            proc.wait()
-            if proc.returncode == 0:
-                self._log(f"Fertig!  →  {self.output_dir.get()}", "green")
-                self.ti_var.set("")
-                f, l = self.output_dir.get(), self.last_file
-                self.after(0,   lambda: self._show_ok(f))
-                self.after(500, lambda: self._open_explorer(l))
-            else:
-                self._log("Fehlgeschlagen – versuche mit Browser-Cookies...", "accent")
-                # Zweiter Versuch mit Chrome-Cookies
-                cmd2 = cmd + ["--cookies-from-browser", "chrome"]
-                try:
-                    proc2 = subprocess.Popen(cmd2, stdout=subprocess.PIPE,
-                                             stderr=subprocess.STDOUT, text=True,
-                                             encoding="utf-8", errors="replace",
-                                             creationflags=CREATE_NO_WINDOW)
-                    for line in proc2.stdout:
-                        line = line.rstrip()
-                        if not line: continue
-                        if os.path.sep in line and line.endswith(".mp3"):
-                            self.last_file = line.strip()
-                        else:
-                            self._log(line)
-                    proc2.wait()
-                    if proc2.returncode == 0:
-                        self._log(f"Fertig!  →  {self.output_dir.get()}", "green")
-                        self.ti_var.set("")
-                        f, l = self.output_dir.get(), self.last_file
-                        self.after(0,   lambda: self._show_ok(f))
-                        self.after(500, lambda: self._open_explorer(l))
-                    else:
-                        self._log("Fehlgeschlagen. TikTok blockiert evtl. den Download.", "red")
-                except Exception as e2:
-                    self._log(f"Fehler: {e2}", "red")
-        except Exception as e:
-            self._log(f"Fehler: {e}", "red")
-        finally:
-            self._busy(False)
-
-    def _sec(self, p, title, sub):
+    def _sec(self, p, icon, title, sub, accent=ACCENT):
         outer = tk.Frame(p, bg=CARD,
                          highlightthickness=1, highlightbackground=BORDER)
-        outer.pack(fill="x", padx=28, pady=(0,10))
+        outer.pack(fill="x", padx=20, pady=(0,10))
         hdr = tk.Frame(outer, bg=CARD2); hdr.pack(fill="x")
-        tk.Label(hdr, text=f"  {title}",
+        # Accent left border
+        tk.Frame(hdr, bg=accent, width=3).pack(side="left", fill="y")
+        tk.Label(hdr, text=f" {icon} ", font=("Segoe UI", 12),
+                 bg=CARD2, fg=accent).pack(side="left", pady=10)
+        tk.Label(hdr, text=title,
                  font=("Segoe UI", 10, "bold"), bg=CARD2, fg=TEXT
-                 ).pack(side="left", pady=8)
-        tk.Label(hdr, text=sub, font=("Segoe UI", 9),
-                 bg=CARD2, fg=TEXT3).pack(side="left", padx=(4,0))
-        tk.Frame(outer, bg=ACCENT, height=1).pack(fill="x")
+                 ).pack(side="left", pady=10)
+        tk.Label(hdr, text=f"  {sub}", font=("Segoe UI", 9),
+                 bg=CARD2, fg=TEXT3).pack(side="left", pady=10)
+        tk.Frame(outer, bg=BORDER, height=1).pack(fill="x")
         return outer
 
-    # ── Helpers ──────────────────────────────────────────────────────────────
+    # ── Helpers ───────────────────────────────────────────────────────────────
     def _paste(self, var):
         try: var.set(self.clipboard_get().strip())
         except: pass
@@ -533,8 +510,8 @@ class App(tk.Tk):
         self.log.configure(state="disabled")
 
     def _show_ok(self, folder):
-        self.ok_path.configure(text=f"  {folder}")
-        self.ok_frame.pack(fill="x", padx=28, pady=(8,0), before=self.prog)
+        self.ok_path.configure(text=folder)
+        self.ok_frame.pack(fill="x", padx=20, pady=(6,0), before=self.prog)
         self.after(6000, self._hide_ok)
 
     def _hide_ok(self):
@@ -544,7 +521,8 @@ class App(tk.Tk):
     def _busy(self, on):
         self.dl_btn.configure(
             state="disabled" if on else "normal",
-            text="  Lädt..." if on else "  MP3 herunterladen")
+            text="  ⏳  Lädt..." if on else "  ↓  MP3 herunterladen",
+            bg=CARD3 if on else ACCENT)
         if on: self.prog.configure(mode="indeterminate"); self.prog.start(12)
         else:  self.prog.stop()
 
@@ -553,6 +531,7 @@ class App(tk.Tk):
             subprocess.Popen(["explorer","/select,",os.path.normpath(fp)],
                              creationflags=CREATE_NO_WINDOW)
 
+    # ── Logic ─────────────────────────────────────────────────────────────────
     def _yt_search(self, q):
         req = urllib.request.Request(
             "https://www.youtube.com/results?search_query="+urllib.parse.quote(q),
@@ -622,7 +601,7 @@ class App(tk.Tk):
             self._log(f"Installiere: {', '.join(missing)}...", "accent")
             threading.Thread(target=self._install_tools, daemon=True).start()
         else:
-            self._log("Bereit!  Strg+V = sofort herunterladen", "green")
+            self._log("[Bereit]  Strg+V = sofort herunterladen", "green")
 
     def _install_tools(self):
         self._busy(True)
@@ -731,6 +710,81 @@ class App(tk.Tk):
                 self.after(500, lambda: self._open_explorer(l))
             else:
                 self._log("Fehlgeschlagen. Link prüfen.", "red")
+        except Exception as e:
+            self._log(f"Fehler: {e}", "red")
+        finally:
+            self._busy(False)
+
+    def _ti_dl(self):
+        url = self.ti_var.get().strip()
+        if not url:
+            messagebox.showwarning("Kein Link", "Bitte TikTok- oder Instagram-Link einfügen!")
+            return
+        if not os.path.exists(YTDLP_PATH):
+            messagebox.showerror("Tools fehlen", "Kurz warten – Tools werden installiert.")
+            return
+        threading.Thread(target=self._ti_thread, args=(url,), daemon=True).start()
+
+    def _ti_thread(self, url):
+        self._busy(True); self._hide_ok(); self.last_file = None
+        url = url.split("?")[0].strip()
+        platform = "TikTok" if "tiktok.com" in url else "Instagram"
+        self._log(f"{platform} Sound wird geladen...", "accent")
+        out = os.path.join(self.output_dir.get(), "%(title).80s.%(ext)s")
+        cmd = [YTDLP_PATH,
+               "-x", "--audio-format", "mp3",
+               "--audio-quality", self.quality_var.get(),
+               "--ffmpeg-location", TOOLS_DIR,
+               "--no-playlist", "--no-check-certificate",
+               "--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+               "-o", out,
+               "--print", "after_move:filepath",
+               url]
+        try:
+            proc = subprocess.Popen(cmd, stdout=subprocess.PIPE,
+                                    stderr=subprocess.STDOUT, text=True,
+                                    encoding="utf-8", errors="replace",
+                                    creationflags=CREATE_NO_WINDOW)
+            for line in proc.stdout:
+                line = line.rstrip()
+                if not line: continue
+                if os.path.sep in line and line.endswith(".mp3"):
+                    self.last_file = line.strip()
+                else:
+                    self._log(line)
+            proc.wait()
+            if proc.returncode == 0:
+                self._log(f"Fertig!  →  {self.output_dir.get()}", "green")
+                self.ti_var.set("")
+                f, l = self.output_dir.get(), self.last_file
+                self.after(0,   lambda: self._show_ok(f))
+                self.after(500, lambda: self._open_explorer(l))
+            else:
+                self._log("Fehlgeschlagen – versuche mit Browser-Cookies...", "accent")
+                cmd2 = cmd + ["--cookies-from-browser", "chrome"]
+                try:
+                    proc2 = subprocess.Popen(cmd2, stdout=subprocess.PIPE,
+                                             stderr=subprocess.STDOUT, text=True,
+                                             encoding="utf-8", errors="replace",
+                                             creationflags=CREATE_NO_WINDOW)
+                    for line in proc2.stdout:
+                        line = line.rstrip()
+                        if not line: continue
+                        if os.path.sep in line and line.endswith(".mp3"):
+                            self.last_file = line.strip()
+                        else:
+                            self._log(line)
+                    proc2.wait()
+                    if proc2.returncode == 0:
+                        self._log(f"Fertig!  →  {self.output_dir.get()}", "green")
+                        self.ti_var.set("")
+                        f, l = self.output_dir.get(), self.last_file
+                        self.after(0,   lambda: self._show_ok(f))
+                        self.after(500, lambda: self._open_explorer(l))
+                    else:
+                        self._log("Fehlgeschlagen. TikTok blockiert evtl. den Download.", "red")
+                except Exception as e2:
+                    self._log(f"Fehler: {e2}", "red")
         except Exception as e:
             self._log(f"Fehler: {e}", "red")
         finally:
