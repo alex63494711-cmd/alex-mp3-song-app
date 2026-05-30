@@ -3,7 +3,7 @@ from tkinter import filedialog, messagebox, ttk
 import threading, subprocess, os, sys, re, shutil, zipfile
 import urllib.request, urllib.parse
 
-VERSION    = "3.3"
+VERSION    = "3.5"
 APP_NAME   = "WaveLoad"
 GITHUB_RAW = "https://raw.githubusercontent.com/alex63494711-cmd/alex-mp3-song-app/refs/heads/main/mp3downloader.py"
 GITHUB_EXE = "https://github.com/alex63494711-cmd/alex-mp3-song-app/releases/latest/download/WaveLoad.exe"
@@ -421,48 +421,38 @@ class App(tk.Tk):
                ).pack(side="left", padx=(8,0))
 
         br = tk.Frame(f, bg=CARD); br.pack(fill="x", padx=14, pady=(0,12))
-        mk_btn(br, "🎵  Nur Sound (MP3)", lambda: self._ti_dl(audio_only=True),
+        mk_btn(br, "  Laden (MP3)", lambda: self._ti_dl(),
                bg=TIKTOK, fg="#000000", hover="#4fbcc4",
-               font=("Segoe UI", 9, "bold"), px=14, py=8
-               ).pack(side="left", padx=(0,8))
-        mk_btn(br, "🎬  Video (MP4)", lambda: self._ti_dl(audio_only=False),
-               bg=INSTA, fg=TEXT, hover="#c0275a",
                font=("Segoe UI", 9, "bold"), px=14, py=8
                ).pack(side="left")
 
-    def _ti_dl(self, audio_only=True):
+    def _ti_dl(self):
         url = self.ti_var.get().strip()
         if not url:
             messagebox.showwarning("Kein Link", "Bitte TikTok- oder Instagram-Link einfügen!")
             return
-        if not ("tiktok.com" in url or "instagram.com" in url or "instagr.am" in url):
-            messagebox.showwarning("Ungültig", "Nur TikTok- und Instagram-Links erlaubt!")
-            return
         if not os.path.exists(YTDLP_PATH):
             messagebox.showerror("Tools fehlen", "Kurz warten – Tools werden installiert.")
             return
-        threading.Thread(target=self._ti_thread, args=(url, audio_only), daemon=True).start()
+        threading.Thread(target=self._ti_thread, args=(url,), daemon=True).start()
 
-    def _ti_thread(self, url, audio_only):
+    def _ti_thread(self, url):
         self._busy(True); self._hide_ok(); self.last_file = None
+        # URL bereinigen – Query-Parameter entfernen
+        url = url.split("?")[0].strip()
         platform = "TikTok" if "tiktok.com" in url else "Instagram"
-        mode = "Sound" if audio_only else "Video"
-        self._log(f"{platform} {mode} wird geladen...", "accent")
-        out = os.path.join(self.output_dir.get(), "%(title)s.%(ext)s")
-        if audio_only:
-            cmd = [YTDLP_PATH, "-x", "--audio-format", "mp3",
-                   "--audio-quality", self.quality_var.get(),
-                   "--ffmpeg-location", TOOLS_DIR,
-                   "-o", out, "--no-playlist",
-                   "--print", "after_move:filepath", url]
-            ext = ".mp3"
-        else:
-            cmd = [YTDLP_PATH, "-f", "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
-                   "--merge-output-format", "mp4",
-                   "--ffmpeg-location", TOOLS_DIR,
-                   "-o", out, "--no-playlist",
-                   "--print", "after_move:filepath", url]
-            ext = ".mp4"
+        self._log(f"{platform} Sound wird geladen...", "accent")
+        out = os.path.join(self.output_dir.get(), "%(title).80s.%(ext)s")
+        cmd = [YTDLP_PATH,
+               "-x", "--audio-format", "mp3",
+               "--audio-quality", self.quality_var.get(),
+               "--ffmpeg-location", TOOLS_DIR,
+               "--no-playlist",
+               "--no-check-certificate",
+               "--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+               "-o", out,
+               "--print", "after_move:filepath",
+               url]
         try:
             proc = subprocess.Popen(cmd, stdout=subprocess.PIPE,
                                     stderr=subprocess.STDOUT, text=True,
@@ -471,7 +461,7 @@ class App(tk.Tk):
             for line in proc.stdout:
                 line = line.rstrip()
                 if not line: continue
-                if os.path.sep in line and line.endswith(ext):
+                if os.path.sep in line and line.endswith(".mp3"):
                     self.last_file = line.strip()
                 else:
                     self._log(line)
@@ -483,7 +473,32 @@ class App(tk.Tk):
                 self.after(0,   lambda: self._show_ok(f))
                 self.after(500, lambda: self._open_explorer(l))
             else:
-                self._log("Fehlgeschlagen. Link prüfen.", "red")
+                self._log("Fehlgeschlagen – versuche mit Browser-Cookies...", "accent")
+                # Zweiter Versuch mit Chrome-Cookies
+                cmd2 = cmd + ["--cookies-from-browser", "chrome"]
+                try:
+                    proc2 = subprocess.Popen(cmd2, stdout=subprocess.PIPE,
+                                             stderr=subprocess.STDOUT, text=True,
+                                             encoding="utf-8", errors="replace",
+                                             creationflags=CREATE_NO_WINDOW)
+                    for line in proc2.stdout:
+                        line = line.rstrip()
+                        if not line: continue
+                        if os.path.sep in line and line.endswith(".mp3"):
+                            self.last_file = line.strip()
+                        else:
+                            self._log(line)
+                    proc2.wait()
+                    if proc2.returncode == 0:
+                        self._log(f"Fertig!  →  {self.output_dir.get()}", "green")
+                        self.ti_var.set("")
+                        f, l = self.output_dir.get(), self.last_file
+                        self.after(0,   lambda: self._show_ok(f))
+                        self.after(500, lambda: self._open_explorer(l))
+                    else:
+                        self._log("Fehlgeschlagen. TikTok blockiert evtl. den Download.", "red")
+                except Exception as e2:
+                    self._log(f"Fehler: {e2}", "red")
         except Exception as e:
             self._log(f"Fehler: {e}", "red")
         finally:
